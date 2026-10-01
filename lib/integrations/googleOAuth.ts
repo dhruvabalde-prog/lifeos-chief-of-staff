@@ -12,6 +12,8 @@ export const GOOGLE_SCOPES = [
   'profile',
   'https://www.googleapis.com/auth/tasks',
   'https://www.googleapis.com/auth/calendar.events',
+  'https://www.googleapis.com/auth/calendar.readonly',
+  'https://www.googleapis.com/auth/gmail.readonly',
   'https://www.googleapis.com/auth/gmail.send',
 ].join(' ');
 
@@ -56,6 +58,29 @@ export async function exchangeCodeForTokens(code: string, redirectUri: string) {
   return response.json();
 }
 
+// Google Tasks API: Fetch Tasks
+export async function fetchGoogleTasks(accessToken: string) {
+  const res = await fetch('https://tasks.googleapis.com/tasks/v1/lists/@default/tasks?showCompleted=false&maxResults=25', {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  if (!res.ok) {
+    throw new Error(`Google Tasks fetch error: ${await res.text()}`);
+  }
+
+  const data = await res.json();
+  return (data.items || []).map((item: any) => ({
+    id: `gtask-${item.id}`,
+    title: item.title,
+    notes: item.notes || '',
+    due: item.due,
+    status: item.status,
+    completed: item.status === 'completed',
+  }));
+}
+
 // Google Tasks API: Create Real Task
 export async function createGoogleTask(accessToken: string, title: string, notes?: string) {
   const res = await fetch('https://tasks.googleapis.com/tasks/v1/lists/@default/tasks', {
@@ -75,6 +100,46 @@ export async function createGoogleTask(accessToken: string, title: string, notes
   }
 
   return res.json();
+}
+
+// Google Calendar API: Fetch Upcoming Events
+export async function fetchGoogleCalendarEvents(accessToken: string) {
+  const now = new Date().toISOString();
+  const res = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${encodeURIComponent(now)}&singleEvents=true&orderBy=startTime&maxResults=15`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    }
+  );
+
+  if (!res.ok) {
+    throw new Error(`Google Calendar fetch error: ${await res.text()}`);
+  }
+
+  const data = await res.json();
+  return (data.items || []).map((item: any) => {
+    const startStr = item.start?.dateTime || item.start?.date || '';
+    const endStr = item.end?.dateTime || item.end?.date || '';
+    
+    let timeRange = 'All Day';
+    if (startStr.includes('T')) {
+      const s = new Date(startStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const e = endStr.includes('T') ? new Date(endStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+      timeRange = e ? `${s} - ${e}` : s;
+    }
+
+    return {
+      id: `gcal-${item.id}`,
+      title: item.summary || 'Untitled Event',
+      timeRange,
+      countdownMinutes: Math.max(0, Math.round((new Date(startStr).getTime() - Date.now()) / 60000)),
+      location: item.location || '',
+      meetLink: item.hangoutLink || item.conferenceData?.entryPoints?.[0]?.uri || undefined,
+      isHighImpact: Boolean(item.hangoutLink),
+    };
+  });
 }
 
 // Google Calendar API: Create Event
@@ -103,4 +168,47 @@ export async function createGoogleCalendarEvent(accessToken: string, event: {
   }
 
   return res.json();
+}
+
+// Gmail API: Fetch Recent Unread / Priority Messages
+export async function fetchGmailMessages(accessToken: string) {
+  const listRes = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=5&q=is:unread', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (!listRes.ok) {
+    throw new Error(`Gmail API error: ${await listRes.text()}`);
+  }
+
+  const listData = await listRes.json();
+  const messages = listData.messages || [];
+
+  const detailedMessages = await Promise.all(
+    messages.slice(0, 5).map(async (msg: any) => {
+      try {
+        const detailRes = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${msg.id}?format=metadata`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (detailRes.ok) {
+          const detail = await detailRes.json();
+          const headers = detail.payload?.headers || [];
+          const subject = headers.find((h: any) => h.name.toLowerCase() === 'subject')?.value || 'No Subject';
+          const from = headers.find((h: any) => h.name.toLowerCase() === 'from')?.value || 'Unknown Sender';
+          const date = headers.find((h: any) => h.name.toLowerCase() === 'date')?.value || '';
+          return {
+            id: detail.id,
+            snippet: detail.snippet,
+            subject,
+            from,
+            date,
+          };
+        }
+      } catch {
+        return null;
+      }
+      return null;
+    })
+  );
+
+  return detailedMessages.filter(Boolean);
 }

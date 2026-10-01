@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { TopBar } from '@/components/TopBar';
 import { EmergencyBanner } from '@/components/EmergencyBanner';
 import { ApprovalsViewportDeck } from '@/components/ApprovalsViewportDeck';
@@ -17,7 +17,7 @@ import {
   INITIAL_NORTH_STARS,
   INITIAL_MISSIONS,
 } from '@/lib/mockData';
-import { ActionCard, Routine, RoutineStep, ActivityLedgerEntry } from '@/types/lifeos';
+import { ActionCard, Routine, RoutineStep, ActivityLedgerEntry, CalendarEvent } from '@/types/lifeos';
 import { storage, UserIntegrationsConfig } from '@/lib/storage';
 
 export default function LifeOSApp() {
@@ -37,7 +37,7 @@ export default function LifeOSApp() {
     geminiApiKey: '',
   });
 
-  const [calendarEvents] = useState(INITIAL_CALENDAR_EVENTS);
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>(INITIAL_CALENDAR_EVENTS);
   const [northStars] = useState(INITIAL_NORTH_STARS);
   const [missions] = useState(INITIAL_MISSIONS);
 
@@ -49,7 +49,7 @@ export default function LifeOSApp() {
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3000);
+    setTimeout(() => setToastMessage(null), 3500);
   };
 
   // Load from Storage
@@ -60,6 +60,138 @@ export default function LifeOSApp() {
     setEmergencyMode(storage.getEmergency());
     setConfig(storage.getConfig());
   }, []);
+
+  // Fetch real Google Tasks, Calendar & Gmail
+  const fetchWorkspaceData = useCallback(async (token?: string) => {
+    const activeToken = token || storage.getConfig().googleAccessToken || config.googleAccessToken;
+    if (!activeToken) return;
+
+    try {
+      const res = await fetch('/api/integrations/google/sync', {
+        headers: { Authorization: `Bearer ${activeToken}` },
+      });
+      if (res.ok) {
+        const payload = await res.json();
+        if (payload.data) {
+          // 1. Calendar
+          if (payload.data.calendarEvents && payload.data.calendarEvents.length > 0) {
+            setCalendarEvents(payload.data.calendarEvents);
+          }
+
+          // 2. Tasks
+          if (payload.data.tasks && payload.data.tasks.length > 0) {
+            const newCardsFromTasks: ActionCard[] = payload.data.tasks.map((t: any) => ({
+              id: t.id,
+              category: 'lifeops' as const,
+              categoryLabel: '✅ GOOGLE TASK',
+              sourceContext: 'Live sync from Google Tasks',
+              headline: t.title,
+              synthesis: t.notes || 'Delegated task retrieved from your primary Google Task list.',
+              urgency: 'high' as const,
+              isKeystone: false,
+              status: 'pending' as const,
+              createdAt: new Date().toISOString(),
+              targetArtifact: 'Google Tasks (@default)',
+              googleService: 'Google Tasks' as const,
+              previewType: 'checklist' as const,
+              previewData: { docTitle: t.title },
+            }));
+
+            setCards((prev) => {
+              const existingIds = new Set(prev.map((c) => c.id));
+              const unique = newCardsFromTasks.filter((c) => !existingIds.has(c.id));
+              const merged = [...unique, ...prev];
+              storage.setCards(merged);
+              return merged;
+            });
+          }
+
+          // 3. Gmail
+          if (payload.data.emails && payload.data.emails.length > 0) {
+            const emailCards: ActionCard[] = payload.data.emails.map((m: any) => ({
+              id: `gmail-${m.id}`,
+              category: 'responses' as const,
+              categoryLabel: '📧 GMAIL PRIORITY',
+              sourceContext: `From: ${m.from}`,
+              headline: `Respond to: "${m.subject}"`,
+              synthesis: m.snippet || 'Unread email requiring executive directive.',
+              urgency: 'high' as const,
+              isKeystone: false,
+              status: 'pending' as const,
+              createdAt: new Date().toISOString(),
+              targetArtifact: 'Gmail (users/me)',
+              googleService: 'Google Docs' as const,
+              previewType: 'email' as const,
+              previewData: {
+                subject: `Re: ${m.subject}`,
+                to: m.from,
+                body: `Hello,\n\nI have reviewed your message regarding "${m.subject}". We are proceeding accordingly.\n\nBest regards,\nChief Executive Office`,
+              },
+            }));
+
+            setCards((prev) => {
+              const existingIds = new Set(prev.map((c) => c.id));
+              const unique = emailCards.filter((c) => !existingIds.has(c.id));
+              const merged = [...unique, ...prev];
+              storage.setCards(merged);
+              return merged;
+            });
+          }
+
+          showToast('🔄 Google Workspace: Tasks, Calendar & Mail Synced');
+        }
+      }
+    } catch (err) {
+      console.warn('Workspace sync failed', err);
+    }
+  }, [config.googleAccessToken]);
+
+  // Capture Google OAuth Redirect Callback from URL
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const googleConnected = params.get('google_connected');
+      const googleEmail = params.get('google_email');
+      const accessToken = params.get('access_token');
+
+      if (googleConnected === 'true' && accessToken) {
+        const updatedConfig = {
+          ...storage.getConfig(),
+          googleConnected: true,
+          googleEmail: googleEmail || 'executive@gmail.com',
+          googleAccessToken: accessToken,
+        };
+        setConfig(updatedConfig);
+        storage.setConfig(updatedConfig);
+        fetchWorkspaceData(accessToken);
+        window.history.replaceState({}, '', window.location.pathname);
+        showToast(`🟢 Google Workspace Connected: ${googleEmail || 'Active'}`);
+      }
+    }
+  }, [fetchWorkspaceData]);
+
+  // Simulate Inbound WhatsApp Directive for instant live testing
+  const handleSimulateWhatsAppInbound = async () => {
+    try {
+      const simulatedText = 'Ramesh cook took ₹2,000 cash advance today and Kamla maid is on leave.';
+      const res = await fetch('/api/integrations/whatsapp/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: simulatedText,
+          sender: 'user',
+          source: 'whatsapp',
+          senderPhone: config.whatsappRecipientPhone || '+1 (555) 019-2831',
+        }),
+      });
+
+      if (res.ok) {
+        showToast('📲 WhatsApp Inbound Received: Mirrored in Chatbox');
+      }
+    } catch {
+      // Non-blocking
+    }
+  };
 
   // Sync mutations
   const updateCards = (newCards: ActionCard[]) => {
@@ -113,7 +245,7 @@ export default function LifeOSApp() {
       actionType: 'EXECUTE',
       cardTitle: card.headline,
       categoryLabel: card.categoryLabel,
-      details: `Executed by Chief of Staff. Target: ${card.targetEntity || 'System'}.`,
+      details: `Executed by Chief of Staff. Target: ${card.targetEntity || card.targetArtifact || 'System'}.`,
       actor: 'Executive Chief of Staff',
     };
 
@@ -207,7 +339,7 @@ export default function LifeOSApp() {
     updateRoutines(updated);
   };
 
-  // Spawn Card from Chatbox or Voice Directive
+  // Spawn Card from Chatbox, Voice Directive, or Protocols
   const handleSpawnCard = (newCard: ActionCard) => {
     const updated = [newCard, ...cards];
     updateCards(updated);
@@ -265,17 +397,19 @@ export default function LifeOSApp() {
           </div>
         )}
 
-        {/* VIEW 2: STAFF / CHATBOX (Centre page is homepage, input bar locked above footer) */}
+        {/* VIEW 2: STAFF / CHATBOX (Centre page is homepage, input bar locked above footer, WhatsApp mirror) */}
         {currentView === 'chat' && (
           <div className="h-full w-full animate-fade-in">
             <ChatboxHomepage
               onSpawnCard={handleSpawnCard}
               onNavigateToApprovals={() => setCurrentView('approvals')}
+              isWhatsAppConnected={Boolean(config.whatsappRecipientPhone)}
+              whatsAppNumber={config.whatsappRecipientPhone}
             />
           </div>
         )}
 
-        {/* VIEW 3: OPERATIONS (Tasks, Routines, Calendar, North Stars, Goals with top scrollable pill filters) */}
+        {/* VIEW 3: OPERATIONS (Tasks, Routines, Calendar, North Stars, Goals, Protocols with top scrollable pill filters) */}
         {currentView === 'operations' && (
           <div className="h-full w-full animate-fade-in">
             <OperationsView
@@ -317,6 +451,8 @@ export default function LifeOSApp() {
         config={config}
         onUpdateConfig={(cfg) => setConfig(cfg)}
         onShowToast={showToast}
+        onSyncGoogle={() => fetchWorkspaceData()}
+        onSimulateWhatsAppInbound={handleSimulateWhatsAppInbound}
       />
 
       {/* Ledger Modal (Accessed from Top Right Settings Dropdown) */}

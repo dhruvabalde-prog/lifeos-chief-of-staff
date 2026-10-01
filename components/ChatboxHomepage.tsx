@@ -7,16 +7,15 @@ import {
   Camera,
   Paperclip,
   Send,
-  Sparkles,
-  Bot,
+  MessageSquare,
   User,
   ArrowRight,
   FileText,
-  CheckCircle2,
   RefreshCw,
+  ExternalLink,
 } from 'lucide-react';
 import { ActionCard } from '@/types/lifeos';
-import { soundManager, generateWaveformData } from '@/lib/audio';
+import { soundManager } from '@/lib/audio';
 import { geminiStaff } from '@/lib/integrations/gemini';
 
 export interface ChatMessage {
@@ -24,6 +23,7 @@ export interface ChatMessage {
   sender: 'staff' | 'user';
   text: string;
   timestamp: string;
+  source?: 'whatsapp' | 'app';
   attachment?: {
     type: 'image' | 'file' | 'voice';
     name: string;
@@ -35,11 +35,15 @@ export interface ChatMessage {
 interface ChatboxHomepageProps {
   onSpawnCard: (card: ActionCard) => void;
   onNavigateToApprovals: () => void;
+  isWhatsAppConnected?: boolean;
+  whatsAppNumber?: string;
 }
 
 export const ChatboxHomepage: React.FC<ChatboxHomepageProps> = ({
   onSpawnCard,
   onNavigateToApprovals,
+  isWhatsAppConnected,
+  whatsAppNumber,
 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -47,6 +51,7 @@ export const ChatboxHomepage: React.FC<ChatboxHomepageProps> = ({
       sender: 'staff',
       text: 'Good afternoon. I am your Executive Chief of Staff. 3 priority action cards are waiting in your Cockpit. Speak a voice directive, snap a bill, or message me below.',
       timestamp: 'Just now',
+      source: 'app',
     },
   ]);
 
@@ -61,6 +66,7 @@ export const ChatboxHomepage: React.FC<ChatboxHomepageProps> = ({
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const lastSyncedIdRef = useRef<string | null>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -75,6 +81,77 @@ export const ChatboxHomepage: React.FC<ChatboxHomepageProps> = ({
       if (timerRef.current) clearInterval(timerRef.current);
     };
   }, []);
+
+  // Poll / Sync WhatsApp Messages
+  useEffect(() => {
+    let isSubscribed = true;
+
+    const syncWhatsApp = async () => {
+      try {
+        const url = lastSyncedIdRef.current
+          ? `/api/integrations/whatsapp/sync?since=${encodeURIComponent(lastSyncedIdRef.current)}`
+          : '/api/integrations/whatsapp/sync';
+
+        const res = await fetch(url);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.messages && data.messages.length > 0 && isSubscribed) {
+            lastSyncedIdRef.current = data.lastId;
+
+            // Merge messages that are not yet in state
+            setMessages((prev) => {
+              const existingIds = new Set(prev.map((m) => m.id));
+              const newMsgs: ChatMessage[] = [];
+
+              for (const wm of data.messages) {
+                if (!existingIds.has(wm.id)) {
+                  newMsgs.push({
+                    id: wm.id,
+                    sender: wm.sender,
+                    text: wm.text,
+                    timestamp: wm.timestamp,
+                    source: wm.source || 'whatsapp',
+                  });
+                }
+              }
+
+              return newMsgs.length > 0 ? [...prev, ...newMsgs] : prev;
+            });
+          }
+        }
+      } catch (err) {
+        // Non-blocking background sync
+      }
+    };
+
+    // Initial sync
+    syncWhatsApp();
+
+    // Background interval sync every 6 seconds
+    const interval = setInterval(syncWhatsApp, 6000);
+    return () => {
+      isSubscribed = false;
+      clearInterval(interval);
+    };
+  }, []);
+
+  // Helper to push to WhatsApp sync store
+  const dispatchToWhatsAppMirror = async (text: string, sender: 'user' | 'staff' = 'user') => {
+    try {
+      await fetch('/api/integrations/whatsapp/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text,
+          sender,
+          source: 'app',
+          senderPhone: whatsAppNumber,
+        }),
+      });
+    } catch {
+      // Non-blocking
+    }
+  };
 
   // REAL MICROPHONE RECORDING
   const handleStartRecording = async () => {
@@ -119,15 +196,14 @@ export const ChatboxHomepage: React.FC<ChatboxHomepageProps> = ({
 
     setIsProcessing(true);
     const simulatedSpoken = 'Send Apex Capital our valuation counter-offer and request a 48-hour signature extension.';
-
     const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-    // Add user voice note message
     const userMsg: ChatMessage = {
       id: `msg-${Date.now()}`,
       sender: 'user',
       text: simulatedSpoken,
       timestamp: now,
+      source: 'app',
       attachment: {
         type: 'voice',
         name: `Voice Directive (0:${recordingSeconds.toString().padStart(2, '0')})`,
@@ -136,22 +212,24 @@ export const ChatboxHomepage: React.FC<ChatboxHomepageProps> = ({
     };
 
     setMessages((prev) => [...prev, userMsg]);
+    dispatchToWhatsAppMirror(simulatedSpoken, 'user');
 
     try {
       const parsed = await geminiStaff.parseDirective(simulatedSpoken, 'voice');
       onSpawnCard(parsed.card);
       soundManager.playApproveChime();
 
-      // Add assistant confirmation message
       const staffReply: ChatMessage = {
         id: `msg-reply-${Date.now()}`,
         sender: 'staff',
         text: `Synthesized your voice directive into an Action Card: "${parsed.card.headline}". It is queued in your Cockpit for one-tap execution.`,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        source: 'app',
         spawnedCard: parsed.card,
       };
 
       setMessages((prev) => [...prev, staffReply]);
+      dispatchToWhatsAppMirror(staffReply.text, 'staff');
     } catch (e) {
       console.error(e);
     } finally {
@@ -172,9 +250,11 @@ export const ChatboxHomepage: React.FC<ChatboxHomepageProps> = ({
       sender: 'user',
       text: textToSend,
       timestamp: now,
+      source: 'app',
     };
 
     setMessages((prev) => [...prev, userMsg]);
+    dispatchToWhatsAppMirror(textToSend, 'user');
     setIsProcessing(true);
 
     try {
@@ -187,10 +267,12 @@ export const ChatboxHomepage: React.FC<ChatboxHomepageProps> = ({
         sender: 'staff',
         text: `Directive processed: "${parsed.card.headline}". Action card prepared in Cockpit.`,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        source: 'app',
         spawnedCard: parsed.card,
       };
 
       setMessages((prev) => [...prev, staffReply]);
+      dispatchToWhatsAppMirror(staffReply.text, 'staff');
     } catch (e) {
       console.error(e);
     } finally {
@@ -208,6 +290,7 @@ export const ChatboxHomepage: React.FC<ChatboxHomepageProps> = ({
       sender: 'user',
       text: isCamera ? 'Captured photo of document/receipt.' : `Attached file: ${file.name}`,
       timestamp: now,
+      source: 'app',
       attachment: {
         type: isCamera ? 'image' : 'file',
         name: file.name,
@@ -227,6 +310,7 @@ export const ChatboxHomepage: React.FC<ChatboxHomepageProps> = ({
         sender: 'staff',
         text: `Extracted data from ${file.name}. Action card generated with itemized preview in your Cockpit.`,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        source: 'app',
         spawnedCard: parsed.card,
       };
 
@@ -238,8 +322,30 @@ export const ChatboxHomepage: React.FC<ChatboxHomepageProps> = ({
     }
   };
 
+  const whatsappDirectUrl = `https://wa.me/?text=${encodeURIComponent('START LIFEOS CHIEF OF STAFF: Live session sync.')}`;
+
   return (
     <div className="w-full h-full flex flex-col justify-between overflow-hidden max-w-2xl mx-auto relative select-none">
+      {/* WhatsApp Live Status Bar if paired */}
+      {isWhatsAppConnected && (
+        <div className="shrink-0 px-3 py-1.5 bg-emerald-950/40 border-b border-emerald-500/20 flex items-center justify-between text-[11px] backdrop-blur-md">
+          <div className="flex items-center gap-1.5 text-emerald-400 font-bold">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span>WhatsApp Live Sync Active</span>
+            {whatsAppNumber && <span className="font-mono text-slate-400 font-normal">({whatsAppNumber})</span>}
+          </div>
+          <a
+            href={whatsappDirectUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center gap-1 text-[10px] text-emerald-400 hover:text-emerald-300 font-semibold transition"
+          >
+            <span>Open WhatsApp</span>
+            <ExternalLink className="w-3 h-3" />
+          </a>
+        </div>
+      )}
+
       {/* 1. SCROLLABLE MESSAGES STREAM */}
       <div className="flex-1 overflow-y-auto space-y-3 p-3 sm:p-4 no-scrollbar">
         {messages.map((msg) => (
@@ -260,6 +366,14 @@ export const ChatboxHomepage: React.FC<ChatboxHomepageProps> = ({
                   : 'bg-slate-900 border border-slate-800 text-slate-200 rounded-bl-sm'
               }`}
             >
+              {/* WhatsApp Source Badge */}
+              {msg.source === 'whatsapp' && (
+                <div className="flex items-center gap-1 text-[9px] font-bold text-emerald-400 mb-1">
+                  <MessageSquare className="w-3 h-3" />
+                  <span>via WhatsApp</span>
+                </div>
+              )}
+
               <div>{msg.text}</div>
 
               {/* Voice Player Attachment */}
