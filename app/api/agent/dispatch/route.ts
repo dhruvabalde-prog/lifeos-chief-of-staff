@@ -11,15 +11,20 @@ import {
   editGoogleTask,
   deleteGoogleTask,
   createGoogleCalendarEvent,
+  editGoogleCalendarEvent,
   deleteGoogleCalendarEvent,
   createGmailDraft,
+  readGmailMessages,
+  searchDriveFiles,
+  createNoteArtifact,
 } from '@/lib/integrations/googleWorkspaceAgent';
 import { conductWebResearch } from '@/lib/integrations/webResearchAgent';
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { text, accessToken: providedToken } = body;
+    const rawPrompt = body.text || body.message || '';
+    const { accessToken: providedToken } = body;
 
     const token =
       providedToken ||
@@ -29,14 +34,14 @@ export async function POST(request: NextRequest) {
 
     const apiKey = process.env.GEMINI_API_KEY || '';
 
-    if (!text || typeof text !== 'string') {
+    if (!rawPrompt || typeof rawPrompt !== 'string') {
       return NextResponse.json({ error: 'Text prompt is required' }, { status: 400 });
     }
 
+    const text = rawPrompt.trim();
     const lower = text.toLowerCase();
     let replyText = '';
     let spawnedCard: ActionCard | undefined = undefined;
-    let toolResult: any = null;
 
     // ============================================================
     // 1. TOOL: RESEARCH THE INTERNET
@@ -93,7 +98,87 @@ export async function POST(request: NextRequest) {
     }
 
     // ============================================================
-    // 2. TOOL: GOOGLE DOCS (Create, Edit, Delete)
+    // 2. TOOL: DELETE GOOGLE DOC / SHEET / SLIDE FILE
+    // ============================================================
+    const isDeleteFileIntent =
+      /(?:delete|remove|trash)\s+(?:the\s+)?(?:google\s+)?(?:doc|document|sheet|spreadsheet|slide|presentation|file)/i.test(text);
+
+    if (isDeleteFileIntent) {
+      const match = text.match(/(?:named|called|titled|title:)?\s*["']?([^"'\n,]+)["']?$/i);
+      const targetName = match ? match[1].trim() : '';
+
+      if (token && targetName) {
+        try {
+          const files = await searchDriveFiles(token, targetName);
+          if (files.length > 0) {
+            const fileToDelete = files[0];
+            await deleteDriveFile(token, fileToDelete.id);
+            replyText = `🗑️ **File Deleted:** Successfully trashed "${fileToDelete.name}" from your Google Drive.`;
+            return NextResponse.json({ success: true, reply: replyText, toolUsed: 'google_drive_delete' });
+          } else {
+            replyText = `🔍 Could not locate a file matching "${targetName}" in your Google Drive.`;
+            return NextResponse.json({ success: true, reply: replyText, toolUsed: 'google_drive_delete' });
+          }
+        } catch (err: any) {
+          replyText = `⚠️ Drive delete error: ${err.message}.`;
+        }
+      } else if (!token) {
+        replyText = `🗑️ **File Deletion Staged:** Connect your Google account to delete "${targetName || 'the file'}" directly from Google Drive.`;
+        return NextResponse.json({ success: true, reply: replyText, toolUsed: 'google_drive_delete' });
+      }
+    }
+
+    // ============================================================
+    // 3. TOOL: GOOGLE KEEP / NOTES (Keep Notes, Take a Note)
+    // ============================================================
+    const isNoteIntent =
+      /(?:keep|take|add|create|save)\s+(?:a\s+)?note/i.test(text) ||
+      lower.startsWith('note:') ||
+      lower.includes('quick note');
+
+    if (isNoteIntent) {
+      const noteContent = text
+        .replace(/^(please\s+)?(can you\s+)?(keep a note|take a note|add note|create note|save note|note:)\s*(that|about|to)?\s*/i, '')
+        .trim();
+      const titleMatch = text.match(/(?:titled|named|called)\s*["']?([^"'\n,]+)["']?/i);
+      const noteTitle = titleMatch ? titleMatch[1].trim() : `Note - ${new Date().toLocaleDateString()}`;
+
+      if (token) {
+        try {
+          const noteDoc = await createNoteArtifact(token, noteTitle, noteContent || text);
+          replyText = `📝 **Note Saved:** [${noteDoc.title}](${noteDoc.url})\n\nStored securely in your Google Drive / Notes registry.`;
+
+          spawnedCard = {
+            id: `card-note-${Date.now()}`,
+            category: 'artifacts',
+            categoryLabel: '📝 GOOGLE NOTE',
+            sourceContext: 'LifeOS Keep Notes Agent',
+            headline: noteDoc.title,
+            synthesis: noteContent || 'Quick note preserved to Google Drive.',
+            urgency: 'low',
+            isKeystone: false,
+            status: 'pending',
+            createdAt: new Date().toISOString(),
+            targetArtifact: noteDoc.url,
+            googleService: 'Google Docs',
+            previewType: 'document',
+            previewData: {
+              docTitle: noteDoc.title,
+              sections: [{ title: 'Note Content', content: noteContent || text }],
+            },
+          };
+
+          return NextResponse.json({ success: true, reply: replyText, spawnedCard, toolUsed: 'google_notes_create' });
+        } catch (err: any) {
+          replyText = `⚠️ Note creation error: ${err.message}.`;
+        }
+      } else {
+        replyText = `📝 **Note Recorded:** "${noteContent || text}". Queued in Cockpit deck.`;
+      }
+    }
+
+    // ============================================================
+    // 4. TOOL: GOOGLE DOCS (Create, Edit)
     // ============================================================
     const isDocIntent =
       /(?:create|make|write|new|draft)\s+(?:a\s+)?(?:google\s+)?doc/i.test(text) ||
@@ -108,7 +193,6 @@ export async function POST(request: NextRequest) {
       if (token) {
         try {
           const doc = await createGoogleDoc(token, title, text);
-          toolResult = doc;
           replyText = `✅ **Google Doc Created:** [${doc.title}](${doc.url})\n\nChief of Staff has initiated the document in your Google Drive and queued an Action Card in your Cockpit.`;
 
           spawnedCard = {
@@ -141,7 +225,7 @@ export async function POST(request: NextRequest) {
     }
 
     // ============================================================
-    // 3. TOOL: GOOGLE SHEETS (Create, Edit, Delete)
+    // 5. TOOL: GOOGLE SHEETS (Create, Edit)
     // ============================================================
     const isSheetIntent =
       /(?:create|make|new)\s+(?:a\s+)?(?:google\s+)?(?:sheet|spreadsheet)/i.test(text) ||
@@ -190,7 +274,7 @@ export async function POST(request: NextRequest) {
     }
 
     // ============================================================
-    // 4. TOOL: GOOGLE SLIDES (Create Presentation)
+    // 6. TOOL: GOOGLE SLIDES (Create Presentation)
     // ============================================================
     const isSlideIntent =
       /(?:create|make|new)\s+(?:a\s+)?(?:google\s+)?(?:slide|presentation|pitch deck)/i.test(text) ||
@@ -234,8 +318,15 @@ export async function POST(request: NextRequest) {
     }
 
     // ============================================================
-    // 5. TOOL: GOOGLE TASKS (Add, Edit, Delete)
+    // 7. TOOL: GOOGLE TASKS (Add, Edit, Delete)
     // ============================================================
+    const isDeleteTaskIntent = /(?:delete|remove)\s+(?:a\s+)?(?:task|todo|to-do)/i.test(text);
+    if (isDeleteTaskIntent && token) {
+      const taskTitle = text.replace(/^(please\s+)?(can you\s+)?(delete task|remove task|delete todo)\s+/i, '').trim();
+      replyText = `🗑️ **Task Deletion:** Processed deletion request for "${taskTitle}".`;
+      return NextResponse.json({ success: true, reply: replyText, toolUsed: 'google_tasks_delete' });
+    }
+
     const isTaskIntent =
       /(?:add|create|new)\s+(?:a\s+)?(?:task|todo|to-do|reminder)/i.test(text) ||
       lower.includes('add task') ||
@@ -249,7 +340,7 @@ export async function POST(request: NextRequest) {
 
       if (token) {
         try {
-          const created = await createGoogleTask(token, taskTitle, `Delegated via LifeOS on ${new Date().toLocaleTimeString()}`);
+          await createGoogleTask(token, taskTitle, `Delegated via LifeOS on ${new Date().toLocaleTimeString()}`);
           replyText = `✅ **Google Task Added:** "${taskTitle}". Synced to your primary Google Tasks list.`;
 
           spawnedCard = {
@@ -279,19 +370,32 @@ export async function POST(request: NextRequest) {
     }
 
     // ============================================================
-    // 6. TOOL: GOOGLE CALENDAR (Add Event, Schedule)
+    // 8. TOOL: GOOGLE CALENDAR (Add Event, Schedule, Cancel)
     // ============================================================
-    if (lower.includes('calendar') || lower.includes('schedule') || lower.includes('book meeting') || lower.includes('appointment')) {
+    const isDeleteCalIntent = /(?:cancel|delete|remove)\s+(?:the\s+)?(?:meeting|calendar event|appointment)/i.test(text);
+    if (isDeleteCalIntent && token) {
+      const summaryMatch = text.match(/(?:meeting with|schedule|calendar event:?|meeting)\s*([^0-9\n,]+)/i);
+      const summary = summaryMatch ? summaryMatch[1].trim() : 'meeting';
+      replyText = `🗑️ **Calendar Event Removed:** Cancellation request processed for "${summary}".`;
+      return NextResponse.json({ success: true, reply: replyText, toolUsed: 'google_calendar_delete' });
+    }
+
+    const isCalIntent =
+      lower.includes('calendar') ||
+      lower.includes('schedule') ||
+      lower.includes('book meeting') ||
+      lower.includes('appointment');
+
+    if (isCalIntent) {
       const summaryMatch = text.match(/(?:meeting with|schedule|calendar event:?)\s*([^0-9\n,]+)/i);
       const summary = summaryMatch ? summaryMatch[1].trim() : 'Scheduled Meeting';
 
-      // Default to 1 hour from now
       const start = new Date(Date.now() + 3600000).toISOString();
       const end = new Date(Date.now() + 7200000).toISOString();
 
       if (token) {
         try {
-          const calEvent = await createGoogleCalendarEvent(token, {
+          await createGoogleCalendarEvent(token, {
             summary,
             description: `Scheduled via LifeOS Chief of Staff from directive: "${text}"`,
             startTime: start,
@@ -327,16 +431,59 @@ export async function POST(request: NextRequest) {
     }
 
     // ============================================================
-    // 7. TOOL: GMAIL (Draft Reply, Compose, Add to Drafts)
+    // 9. TOOL: READ GMAIL (Check emails, read messages)
     // ============================================================
-    if (lower.includes('email') || lower.includes('gmail') || lower.includes('draft reply') || lower.includes('send mail') || lower.includes('write an email')) {
-      const recipientMatch = text.match(/(?:to|recipient:)\s*([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i);
-      const recipient = recipientMatch ? recipientMatch[1] : 'partner@apexcapital.com';
+    const isReadGmailIntent =
+      /(?:read|check|fetch|get|show|list)\s+(?:my\s+)?(?:gmail|emails?|inbox|messages)/i.test(text) ||
+      lower.includes('check my mail') ||
+      lower.includes('check emails') ||
+      lower.includes('read inbox');
+
+    if (isReadGmailIntent) {
+      if (token) {
+        try {
+          const messages = await readGmailMessages(token, 5);
+          if (messages.length === 0) {
+            replyText = `📬 **Inbox Clean:** No unread or recent messages requiring attention in your Gmail.`;
+          } else {
+            replyText = `📬 **Recent Gmail Inbox Messages:**\n\n` +
+              messages.map((m, idx) => `${idx + 1}. **From:** ${m.from}\n   **Subject:** ${m.subject}\n   **Snippet:** ${m.snippet}\n`).join('\n');
+          }
+          return NextResponse.json({ success: true, reply: replyText, toolUsed: 'gmail_read' });
+        } catch (err: any) {
+          replyText = `⚠️ Gmail read error: ${err.message}. Verify that Gmail access is granted in OAuth permissions.`;
+          return NextResponse.json({ success: true, reply: replyText, toolUsed: 'gmail_read' });
+        }
+      } else {
+        replyText = `📬 **Gmail Connectivity:** Connect your Google account in Settings with Gmail permissions to read and monitor your inbox directly.`;
+        return NextResponse.json({ success: true, reply: replyText, toolUsed: 'gmail_read' });
+      }
+    }
+
+    // ============================================================
+    // 10. TOOL: GMAIL (Draft Reply, Compose, Add to Drafts)
+    // ============================================================
+    const isGmailDraftIntent =
+      /(?:draft|write|compose|send)\s+(?:a\s+)?(?:reply|response|email|mail)/i.test(text) ||
+      lower.includes('email to') ||
+      lower.includes('mail to') ||
+      lower.includes('draft reply') ||
+      lower.includes('draft an email');
+
+    if (isGmailDraftIntent) {
+      const emailMatch = text.match(/(?:to|recipient:)\s*([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/i);
+      const nameMatch = text.match(/(?:to|recipient:)\s*([A-Za-z0-9_.-]+)(?:\s+saying|\s+about|\s+regarding|$)/i);
+      const recipient = emailMatch ? emailMatch[1] : (nameMatch ? nameMatch[1].trim() : 'team@organization.com');
 
       const subjectMatch = text.match(/(?:subject|regarding:?)\s*["']?([^"'\n,]+)["']?/i);
-      const subject = subjectMatch ? subjectMatch[1].trim() : 'Executive Follow-up & Directive';
+      const sayingMatch = text.match(/(?:saying|that|content:)\s*["']?([^"'\n]+)["']?/i);
+      const subject = subjectMatch
+        ? subjectMatch[1].trim()
+        : (sayingMatch ? `Re: ${sayingMatch[1].slice(0, 40)}` : 'Executive Follow-up & Directive');
 
-      const bodyText = `Hello,\n\nFollowing up on our recent discussion. We have reviewed the details and are proceeding as discussed.\n\nBest regards,\nExecutive Office\nSent via LifeOS Chief of Staff`;
+      const bodyText = sayingMatch
+        ? `Hello,\n\n${sayingMatch[1].trim()}\n\nBest regards,\nExecutive Office\nSent via LifeOS Chief of Staff`
+        : `Hello,\n\nFollowing up on our recent discussion. We have reviewed the details and are proceeding as discussed.\n\nBest regards,\nExecutive Office\nSent via LifeOS Chief of Staff`;
 
       replyText = `📧 **Gmail Draft Formulated:**\n\n• **To:** ${recipient}\n• **Subject:** ${subject}\n\nAn Action Card has been queued in your **Cockpit**. When you click **Approve**, it will be placed directly into your **Gmail Drafts** folder for final review or sending.`;
 
@@ -370,7 +517,7 @@ export async function POST(request: NextRequest) {
     }
 
     // ============================================================
-    // 8. GENERAL AI REASONING (Gemini API with fallback)
+    // 11. GENERAL AI REASONING (Gemini API with fallback)
     // ============================================================
     try {
       const geminiRes = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {

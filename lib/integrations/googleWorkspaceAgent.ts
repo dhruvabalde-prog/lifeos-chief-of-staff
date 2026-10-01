@@ -487,3 +487,110 @@ export async function sendGmailDraft(accessToken: string, draftId: string) {
   }
   return res.json();
 }
+
+/**
+ * 7. GMAIL READ OPERATIONS
+ */
+export interface GmailMessageSummary {
+  id: string;
+  threadId: string;
+  from: string;
+  subject: string;
+  snippet: string;
+  date: string;
+}
+
+export async function readGmailMessages(
+  accessToken: string,
+  maxResults: number = 5,
+  query?: string
+): Promise<GmailMessageSummary[]> {
+  const qParam = query ? `&q=${encodeURIComponent(query)}` : '';
+  const listRes = await fetch(
+    `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=${maxResults}${qParam}`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }
+  );
+
+  if (!listRes.ok) {
+    throw new Error(`Gmail list messages failed: ${await listRes.text()}`);
+  }
+
+  const listData = await listRes.json();
+  const messages: GmailMessageSummary[] = [];
+
+  if (listData.messages && Array.isArray(listData.messages)) {
+    for (const item of listData.messages) {
+      try {
+        const msgRes = await fetch(
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages/${item.id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`,
+          {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          }
+        );
+        if (msgRes.ok) {
+          const msgData = await msgRes.json();
+          const headers = msgData.payload?.headers || [];
+          const from = headers.find((h: any) => h.name.toLowerCase() === 'from')?.value || 'Unknown';
+          const subject = headers.find((h: any) => h.name.toLowerCase() === 'subject')?.value || 'No Subject';
+          const date = headers.find((h: any) => h.name.toLowerCase() === 'date')?.value || '';
+
+          messages.push({
+            id: item.id,
+            threadId: item.threadId,
+            from,
+            subject,
+            snippet: msgData.snippet || '',
+            date,
+          });
+        }
+      } catch {
+        // Non-fatal for single message
+      }
+    }
+  }
+
+  return messages;
+}
+
+/**
+ * 8. DRIVE SEARCH & DELETE FILE BY TITLE
+ */
+export async function searchDriveFiles(
+  accessToken: string,
+  queryName: string,
+  mimeTypePrefix?: string
+): Promise<{ id: string; name: string; mimeType: string; webViewLink?: string }[]> {
+  let q = `name contains '${queryName.replace(/'/g, "\\'")}' and trashed = false`;
+  if (mimeTypePrefix) {
+    q += ` and mimeType contains '${mimeTypePrefix}'`;
+  }
+
+  const res = await fetch(
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,mimeType,webViewLink)&pageSize=10`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }
+  );
+
+  if (!res.ok) {
+    throw new Error(`Google Drive search files failed: ${await res.text()}`);
+  }
+
+  const data = await res.json();
+  return data.files || [];
+}
+
+/**
+ * 9. KEEP / NOTES ARTIFACT OPERATION
+ */
+export async function createNoteArtifact(
+  accessToken: string,
+  title: string,
+  content: string
+): Promise<AgentDocResult> {
+  const noteTitle = title.startsWith('Note:') ? title : `Note: ${title}`;
+  return createGoogleDoc(accessToken, noteTitle, content);
+}
+
