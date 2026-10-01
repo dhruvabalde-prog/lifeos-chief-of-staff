@@ -99,9 +99,11 @@ export const ConnectModal: React.FC<ConnectModalProps> = ({
     }
   };
 
-  // Pre-configured WhatsApp web link with verified LifeOS pairing
-  const cleanNumber = (config.whatsappRecipientPhone || '').replace(/[^\d]/g, '');
-  const whatsappDirectUrl = `https://wa.me/?text=${encodeURIComponent('START LIFEOS CHIEF OF STAFF: Syncing my voice memos and daily directives.')}`;
+  // WhatsApp bot URL (uses NEXT_PUBLIC_WHATSAPP_BOT_NUMBER if provided, or open WhatsApp)
+  const botNumber = (process.env.NEXT_PUBLIC_WHATSAPP_BOT_NUMBER || '').replace(/[^\d]/g, '');
+  const whatsappDirectUrl = botNumber
+    ? `https://wa.me/${botNumber}?text=${encodeURIComponent('START LIFEOS CHIEF OF STAFF: Syncing my voice memos and daily directives.')}`
+    : `https://wa.me/?text=${encodeURIComponent('START LIFEOS CHIEF OF STAFF: Syncing my voice memos and daily directives.')}`;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/85 backdrop-blur-md animate-fade-in select-none">
@@ -129,12 +131,12 @@ export const ConnectModal: React.FC<ConnectModalProps> = ({
                   <MessageSquare className="w-4 h-4" />
                 </div>
                 <div>
-                  <div className="text-xs font-bold text-white">WhatsApp</div>
+                  <div className="text-xs font-bold text-white">WhatsApp Mirror</div>
                   <div className="text-[11px] text-slate-400">
                     {config.whatsappRecipientPhone ? (
                       <span className="text-emerald-400 font-medium">Paired: {config.whatsappRecipientPhone}</span>
                     ) : (
-                      'Two-way chat & audio note mirror'
+                      'Direct voice notes & chat sync'
                     )}
                   </div>
                 </div>
@@ -152,11 +154,14 @@ export const ConnectModal: React.FC<ConnectModalProps> = ({
 
             {!config.whatsappRecipientPhone ? (
               <div className="space-y-2">
+                <label className="text-[11px] text-slate-400 block">
+                  Your Phone Number (with country code):
+                </label>
                 <input
                   type="tel"
                   value={whatsappPhone}
                   onChange={(e) => setWhatsappPhone(e.target.value)}
-                  placeholder="Your WhatsApp number (e.g. +1 415 555 2671)"
+                  placeholder="+91 98765 43210 or +1 415 555 2671"
                   className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 font-mono"
                 />
                 <button
@@ -165,7 +170,7 @@ export const ConnectModal: React.FC<ConnectModalProps> = ({
                   className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition flex items-center justify-center gap-1.5 shadow-md shadow-emerald-600/20 disabled:opacity-40"
                 >
                   <MessageSquare className="w-3.5 h-3.5" />
-                  <span>Connect WhatsApp</span>
+                  <span>Pair My WhatsApp</span>
                 </button>
               </div>
             ) : (
@@ -174,6 +179,9 @@ export const ConnectModal: React.FC<ConnectModalProps> = ({
                   <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
                   <span>Two-Way WhatsApp Mirror Active</span>
                 </div>
+                <p className="text-[11px] text-slate-400">
+                  Voice memos and messages sent to LifeOS will mirror directly into your Chatbox.
+                </p>
 
                 <div className="grid grid-cols-2 gap-2 pt-1">
                   <a
