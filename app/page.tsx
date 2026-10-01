@@ -8,8 +8,8 @@ import { Runway } from '@/components/Runway';
 import { RoutinePlayerModal } from '@/components/RoutinePlayerModal';
 import { InputStreamPanel } from '@/components/InputStreamPanel';
 import { MissionsPanel } from '@/components/MissionsPanel';
-import { ActivityLedgerPanel } from '@/components/ActivityLedgerPanel';
-import { IntegrationsModal } from '@/components/IntegrationsModal';
+import { ConnectModal } from '@/components/ConnectModal';
+import { LedgerModal } from '@/components/LedgerModal';
 import { MobileNavBar } from '@/components/MobileNavBar';
 import {
   INITIAL_ACTION_CARDS,
@@ -23,7 +23,8 @@ import { soundManager } from '@/lib/audio';
 import { storage, UserIntegrationsConfig } from '@/lib/storage';
 
 export default function LifeOSApp() {
-  const [currentView, setCurrentView] = useState<'cockpit' | 'input' | 'missions' | 'ledger'>('cockpit');
+  const [currentView, setCurrentView] = useState<'cockpit' | 'input' | 'missions'>('cockpit');
+  const [cockpitSubTab, setCockpitSubTab] = useState<'approvals' | 'runway'>('approvals');
   const [emergencyMode, setEmergencyMode] = useState<boolean>(false);
 
   // Persistent States
@@ -43,50 +44,28 @@ export default function LifeOSApp() {
   const [northStars] = useState(INITIAL_NORTH_STARS);
   const [missions] = useState(INITIAL_MISSIONS);
 
+  // Modals
   const [selectedRoutine, setSelectedRoutine] = useState<Routine | null>(null);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isConnectOpen, setIsConnectOpen] = useState(false);
+  const [isLedgerOpen, setIsLedgerOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 3500);
+    setTimeout(() => setToastMessage(null), 3000);
   };
 
-  // Load from Storage & handle Google OAuth URL redirects on mount
+  // Load from Storage
   useEffect(() => {
     setCards(storage.getCards());
     setRawInputs(storage.getInputs());
     setRoutines(storage.getRoutines());
     setActivityLedger(storage.getLedger());
     setEmergencyMode(storage.getEmergency());
-    const storedConfig = storage.getConfig();
-
-    // Check for Google OAuth callback params
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      if (params.get('google_connected') === 'true') {
-        const email = params.get('google_email') || 'Connected Account';
-        const token = params.get('access_token') || '';
-        const updated = {
-          ...storedConfig,
-          googleConnected: true,
-          googleEmail: email,
-          googleAccessToken: token,
-        };
-        storage.setConfig(updated);
-        setConfig(updated);
-        showToast(`Google Account Linked: ${email}`);
-        window.history.replaceState({}, '', window.location.pathname);
-      } else if (params.get('google_error')) {
-        showToast(`Google Auth Failed: ${params.get('google_error')}`);
-        window.history.replaceState({}, '', window.location.pathname);
-      } else {
-        setConfig(storedConfig);
-      }
-    }
+    setConfig(storage.getConfig());
   }, []);
 
-  // Sync state mutations to storage
+  // Sync mutations
   const updateCards = (newCards: ActionCard[]) => {
     setCards(newCards);
     storage.setCards(newCards);
@@ -121,58 +100,21 @@ export default function LifeOSApp() {
       cardTitle: next ? 'Emergency Sick Shield Active' : 'Shield Stood Down',
       categoryLabel: '🛡️ PROTOCOL',
       details: next
-        ? 'Quarantined non-essential action cards. Streaks frozen with SICK_DAY_PAUSE.'
-        : 'Restored all quarantined tasks to Cockpit deck with zero data loss.',
+        ? 'Quarantined non-essential tasks. Streaks frozen with SICK_DAY_PAUSE.'
+        : 'Restored all quarantined tasks to deck with zero data loss.',
       actor: 'User (Principal)',
       streakStatus: next ? 'SICK_DAY_PAUSE' : 'COMPLETED',
     };
 
     updateLedger([logEntry, ...activityLedger]);
-    showToast(next ? '🚨 Emergency Shield Active: Non-essentials quarantined.' : 'Shield Deactivated: All tasks restored.');
+    showToast(next ? '🚨 Emergency Shield Active' : 'Shield Deactivated');
   };
 
-  // 1. APPROVE & EXECUTE (Real API Dispatches)
+  // 1. APPROVE & EXECUTE
   const handleApproveCard = async (card: ActionCard) => {
     const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-    // Mark card approved
     const updated = cards.map((c) => (c.id === card.id ? { ...c, status: 'approved' as const } : c));
     updateCards(updated);
-
-    // If Google connected, dispatch real Google Task
-    if (config.googleConnected && config.googleAccessToken) {
-      try {
-        await fetch('/api/integrations/google/tasks', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            title: card.headline,
-            notes: card.synthesis,
-            accessToken: config.googleAccessToken,
-          }),
-        });
-      } catch (e) {
-        console.warn('Google Task dispatch error', e);
-      }
-    }
-
-    // If WhatsApp configured, dispatch real WhatsApp alert
-    if (config.whatsappPhoneNumberId && config.whatsappAccessToken && config.whatsappRecipientPhone) {
-      try {
-        await fetch('/api/integrations/whatsapp', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            phoneNumberId: config.whatsappPhoneNumberId,
-            accessToken: config.whatsappAccessToken,
-            recipientPhone: config.whatsappRecipientPhone,
-            messageText: `🚀 LifeOS Approved: ${card.headline}`,
-          }),
-        });
-      } catch (e) {
-        console.warn('WhatsApp alert error', e);
-      }
-    }
 
     const logEntry: ActivityLedgerEntry = {
       id: `act-${Date.now()}`,
@@ -185,7 +127,7 @@ export default function LifeOSApp() {
     };
 
     updateLedger([logEntry, ...activityLedger]);
-    showToast(`🚀 Dispatched: "${card.headline.slice(0, 36)}..."`);
+    showToast(`🚀 Dispatched: "${card.headline.slice(0, 32)}..."`);
   };
 
   // 2. SNOOZE / DEFER
@@ -200,12 +142,12 @@ export default function LifeOSApp() {
       actionType: 'SNOOZE',
       cardTitle: card.headline,
       categoryLabel: card.categoryLabel,
-      details: `Deferred to: ${deferLabel}. Removed from deck.`,
+      details: `Deferred to: ${deferLabel}.`,
       actor: 'User (Principal)',
     };
 
     updateLedger([logEntry, ...activityLedger]);
-    showToast(`🕒 Snoozed until ${deferLabel}`);
+    showToast(`🕒 Snoozed: ${deferLabel}`);
   };
 
   // 3. QUICK CRITIQUE RE-DRAFT
@@ -240,7 +182,7 @@ export default function LifeOSApp() {
       actionType: 'DRAFT_SAVED',
       cardTitle: card.headline,
       categoryLabel: card.categoryLabel,
-      details: `Saved to native drafts. Agent control released.`,
+      details: `Saved to native drafts.`,
       actor: 'User (Principal)',
     };
 
@@ -282,9 +224,9 @@ export default function LifeOSApp() {
     if (resultingCard) {
       const newCards = [resultingCard, ...cards];
       updateCards(newCards);
-      showToast(`🎯 Directive formulated into Cockpit card`);
+      showToast(`🎯 Formulated Cockpit Card`);
     } else {
-      showToast('📥 Directive logged into raw history feed.');
+      showToast('📥 Logged into Ingestion Feed');
     }
   };
 
@@ -301,16 +243,16 @@ export default function LifeOSApp() {
   const activeRoutine = routines.find((r) => r.isActiveNow) || routines[0];
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#090d16] text-slate-100 selection:bg-indigo-500 selection:text-white pb-20 md:pb-12">
-      {/* Top Bar Header */}
+    <div className="min-h-screen flex flex-col bg-[#090d16] text-slate-100 selection:bg-indigo-500 selection:text-white pb-24 md:pb-12">
+      {/* Top Bar Header (Shield Icon only + Settings Dropdown) */}
       <TopBar
-        currentView={currentView}
-        onViewChange={(v) => setCurrentView(v)}
         emergencyMode={emergencyMode}
         onToggleEmergency={handleToggleEmergency}
-        pendingCardCount={visibleCardCount}
-        onOpenSettings={() => setIsSettingsOpen(true)}
-        isGoogleConnected={config.googleConnected}
+        onOpenLedger={() => setIsLedgerOpen(true)}
+        onOpenConnect={() => setIsConnectOpen(true)}
+        onResetDemo={handleResetDemoCards}
+        isWhatsAppConnected={Boolean(config.whatsappRecipientPhone)}
+        isGoogleConnected={Boolean(config.googleConnected)}
       />
 
       {/* Emergency / Sick Shield Warning */}
@@ -321,72 +263,90 @@ export default function LifeOSApp() {
         keystoneCount={keystoneCount}
       />
 
-      {/* Main View Area (Mobile-First, Simplified) */}
-      <main className="flex-1 w-full max-w-4xl mx-auto px-3 sm:px-6 py-4 space-y-5">
-        {/* COCKPIT VIEW */}
+      {/* Main View Area */}
+      <main className="flex-1 w-full max-w-2xl mx-auto px-3 sm:px-4 py-3 space-y-4">
+        {/* VIEW 1: COCKPIT */}
         {currentView === 'cockpit' && (
-          <div className="space-y-5 animate-fade-in">
-            <CockpitDeck
-              cards={cards}
-              emergencyMode={emergencyMode}
-              onApprove={handleApproveCard}
-              onSnooze={handleSnoozeCard}
-              onCritiqueUpdate={handleCritiqueUpdate}
-              onSaveToDrafts={handleSaveToDrafts}
-              onKillMission={handleKillMission}
-              onResetDemoCards={handleResetDemoCards}
-            />
+          <div className="space-y-4 animate-fade-in">
+            {/* Cockpit Sub-Tab Switcher */}
+            <div className="flex items-center justify-center">
+              <div className="flex bg-slate-900 p-1 rounded-2xl border border-slate-800 text-xs font-bold w-full max-w-xs justify-center">
+                <button
+                  onClick={() => { soundManager.playTap(); setCockpitSubTab('approvals'); }}
+                  className={`flex-1 py-1.5 px-3 rounded-xl transition text-center ${
+                    cockpitSubTab === 'approvals' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  ⚡ Approvals ({visibleCardCount})
+                </button>
+                <button
+                  onClick={() => { soundManager.playTap(); setCockpitSubTab('runway'); }}
+                  className={`flex-1 py-1.5 px-3 rounded-xl transition text-center ${
+                    cockpitSubTab === 'runway' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+                  }`}
+                >
+                  🟢 Runway
+                </button>
+              </div>
+            </div>
 
-            <Runway
-              activeRoutine={activeRoutine}
-              allRoutines={routines}
-              calendarEvents={calendarEvents}
-              northStars={northStars}
-              emergencyMode={emergencyMode}
-              onOpenRoutine={(routine) => setSelectedRoutine(routine)}
-            />
+            {/* Sub-Page A: Single-Card Deck */}
+            {cockpitSubTab === 'approvals' && (
+              <CockpitDeck
+                cards={cards}
+                emergencyMode={emergencyMode}
+                onApprove={handleApproveCard}
+                onSnooze={handleSnoozeCard}
+                onCritiqueUpdate={handleCritiqueUpdate}
+                onSaveToDrafts={handleSaveToDrafts}
+                onKillMission={handleKillMission}
+                onResetDemoCards={handleResetDemoCards}
+              />
+            )}
+
+            {/* Sub-Page B: Today's Runway */}
+            {cockpitSubTab === 'runway' && (
+              <Runway
+                activeRoutine={activeRoutine}
+                allRoutines={routines}
+                calendarEvents={calendarEvents}
+                northStars={northStars}
+                emergencyMode={emergencyMode}
+                onOpenRoutine={(routine) => setSelectedRoutine(routine)}
+              />
+            )}
           </div>
         )}
 
-        {/* INPUT STREAM VIEW */}
+        {/* VIEW 2: DIRECT / INPUT STREAM */}
         {currentView === 'input' && (
           <div className="animate-fade-in">
             <InputStreamPanel
               inputs={rawInputs}
               onAddNewInput={handleAddNewInput}
-              onNavigateToCard={() => setCurrentView('cockpit')}
-              onOpenSettings={() => setIsSettingsOpen(true)}
+              onNavigateToCard={() => {
+                setCurrentView('cockpit');
+                setCockpitSubTab('approvals');
+              }}
             />
           </div>
         )}
 
-        {/* MISSIONS VIEW */}
+        {/* VIEW 3: MISSIONS */}
         {currentView === 'missions' && (
           <div className="animate-fade-in">
             <MissionsPanel
               missions={missions}
               northStars={northStars}
-              onNavigateToCockpit={() => setCurrentView('cockpit')}
-            />
-          </div>
-        )}
-
-        {/* LEDGER VIEW */}
-        {currentView === 'ledger' && (
-          <div className="animate-fade-in">
-            <ActivityLedgerPanel
-              entries={activityLedger}
-              emergencyMode={emergencyMode}
             />
           </div>
         )}
       </main>
 
-      {/* Sticky Bottom Navigation on Mobile */}
+      {/* Sticky Bottom Navigation on Mobile (Only 3 Tabs) */}
       <MobileNavBar
         currentView={currentView}
         onViewChange={(v) => setCurrentView(v)}
-        onOpenSettings={() => setIsSettingsOpen(true)}
         pendingCount={visibleCardCount}
       />
 
@@ -399,17 +359,26 @@ export default function LifeOSApp() {
         onUpdateRoutineSteps={handleUpdateRoutineSteps}
       />
 
-      {/* Connected Accounts Modal (Google OAuth, WhatsApp, Gemini Key) */}
-      <IntegrationsModal
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
+      {/* Connect Modal (WhatsApp Number & Google Login, Zero API keys) */}
+      <ConnectModal
+        isOpen={isConnectOpen}
+        onClose={() => setIsConnectOpen(false)}
         config={config}
         onUpdateConfig={(cfg) => setConfig(cfg)}
+        onShowToast={showToast}
+      />
+
+      {/* Ledger Modal (Accessed from Top Right Settings Dropdown) */}
+      <LedgerModal
+        isOpen={isLedgerOpen}
+        onClose={() => setIsLedgerOpen(false)}
+        entries={activityLedger}
+        emergencyMode={emergencyMode}
       />
 
       {/* Floating Action Toast */}
       {toastMessage && (
-        <aside aria-label="Notification" className="fixed bottom-16 md:bottom-6 right-4 md:right-6 z-50 px-3.5 py-2.5 rounded-2xl bg-slate-900 border border-indigo-500/50 shadow-2xl text-xs font-semibold text-white flex items-center gap-2 backdrop-blur-md animate-fade-in">
+        <aside aria-label="Notification" className="fixed bottom-20 md:bottom-6 right-4 md:right-6 z-50 px-3.5 py-2.5 rounded-2xl bg-slate-900 border border-indigo-500/50 shadow-2xl text-xs font-semibold text-white flex items-center gap-2 backdrop-blur-md animate-fade-in">
           <span className="w-2 h-2 rounded-full bg-emerald-400" />
           <span>{toastMessage}</span>
         </aside>
