@@ -95,7 +95,13 @@ export async function POST(request: NextRequest) {
     // ============================================================
     // 2. TOOL: GOOGLE DOCS (Create, Edit, Delete)
     // ============================================================
-    if (lower.includes('create doc') || lower.includes('make a doc') || lower.includes('write doc') || lower.includes('new doc') || lower.includes('google doc')) {
+    const isDocIntent =
+      /(?:create|make|write|new|draft)\s+(?:a\s+)?(?:google\s+)?doc/i.test(text) ||
+      lower.includes('google doc') ||
+      lower.includes('create doc') ||
+      lower.includes('make doc');
+
+    if (isDocIntent) {
       const titleMatch = text.match(/(?:named|called|titled|title:)\s*["']?([^"'\n,]+)["']?/i);
       const title = titleMatch ? titleMatch[1].trim() : `LifeOS Executive Brief - ${new Date().toLocaleDateString()}`;
 
@@ -137,7 +143,13 @@ export async function POST(request: NextRequest) {
     // ============================================================
     // 3. TOOL: GOOGLE SHEETS (Create, Edit, Delete)
     // ============================================================
-    if (lower.includes('create sheet') || lower.includes('make a sheet') || lower.includes('spreadsheet') || lower.includes('google sheet')) {
+    const isSheetIntent =
+      /(?:create|make|new)\s+(?:a\s+)?(?:google\s+)?(?:sheet|spreadsheet)/i.test(text) ||
+      lower.includes('google sheet') ||
+      lower.includes('create sheet') ||
+      lower.includes('spreadsheet');
+
+    if (isSheetIntent) {
       const titleMatch = text.match(/(?:named|called|titled|title:)\s*["']?([^"'\n,]+)["']?/i);
       const title = titleMatch ? titleMatch[1].trim() : `Ledger - ${new Date().toLocaleDateString()}`;
 
@@ -180,7 +192,13 @@ export async function POST(request: NextRequest) {
     // ============================================================
     // 4. TOOL: GOOGLE SLIDES (Create Presentation)
     // ============================================================
-    if (lower.includes('create slide') || lower.includes('make slides') || lower.includes('presentation') || lower.includes('google slide') || lower.includes('pitch deck')) {
+    const isSlideIntent =
+      /(?:create|make|new)\s+(?:a\s+)?(?:google\s+)?(?:slide|presentation|pitch deck)/i.test(text) ||
+      lower.includes('google slide') ||
+      lower.includes('create slide') ||
+      lower.includes('pitch deck');
+
+    if (isSlideIntent) {
       const titleMatch = text.match(/(?:named|called|titled|title:)\s*["']?([^"'\n,]+)["']?/i);
       const title = titleMatch ? titleMatch[1].trim() : `Presentation - ${new Date().toLocaleDateString()}`;
 
@@ -218,7 +236,13 @@ export async function POST(request: NextRequest) {
     // ============================================================
     // 5. TOOL: GOOGLE TASKS (Add, Edit, Delete)
     // ============================================================
-    if (lower.includes('add task') || lower.includes('create task') || lower.includes('remind me to') || lower.includes('todo') || lower.includes('to-do')) {
+    const isTaskIntent =
+      /(?:add|create|new)\s+(?:a\s+)?(?:task|todo|to-do|reminder)/i.test(text) ||
+      lower.includes('add task') ||
+      lower.includes('remind me to') ||
+      lower.includes('todo:');
+
+    if (isTaskIntent) {
       const taskTitle = text
         .replace(/^(please\s+)?(can you\s+)?(add a task to|create a task to|add task:|remind me to|add todo:)\s+/i, '')
         .trim();
