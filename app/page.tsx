@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { TopBar } from '@/components/TopBar';
 import { EmergencyBanner } from '@/components/EmergencyBanner';
 import { CockpitDeck } from '@/components/CockpitDeck';
@@ -9,87 +9,169 @@ import { RoutinePlayerModal } from '@/components/RoutinePlayerModal';
 import { InputStreamPanel } from '@/components/InputStreamPanel';
 import { MissionsPanel } from '@/components/MissionsPanel';
 import { ActivityLedgerPanel } from '@/components/ActivityLedgerPanel';
+import { IntegrationsModal } from '@/components/IntegrationsModal';
+import { MobileNavBar } from '@/components/MobileNavBar';
 import {
   INITIAL_ACTION_CARDS,
   INITIAL_ROUTINES,
   INITIAL_CALENDAR_EVENTS,
   INITIAL_NORTH_STARS,
   INITIAL_MISSIONS,
-  INITIAL_RAW_INPUTS,
-  INITIAL_ACTIVITY_LEDGER,
 } from '@/lib/mockData';
 import { ActionCard, Routine, RoutineStep, RawInputItem, ActivityLedgerEntry } from '@/types/lifeos';
 import { soundManager } from '@/lib/audio';
-import { googleWorkspace } from '@/lib/integrations/googleWorkspace';
+import { storage, UserIntegrationsConfig } from '@/lib/storage';
 
 export default function LifeOSApp() {
-  // Views: 'cockpit' | 'input' | 'missions' | 'ledger'
   const [currentView, setCurrentView] = useState<'cockpit' | 'input' | 'missions' | 'ledger'>('cockpit');
-
-  // Emergency / Sick Shield Mode
   const [emergencyMode, setEmergencyMode] = useState<boolean>(false);
 
-  // Core Reactive State
+  // Persistent States
   const [cards, setCards] = useState<ActionCard[]>(INITIAL_ACTION_CARDS);
-  const [rawInputs, setRawInputs] = useState<RawInputItem[]>(INITIAL_RAW_INPUTS);
+  const [rawInputs, setRawInputs] = useState<RawInputItem[]>([]);
   const [routines, setRoutines] = useState<Routine[]>(INITIAL_ROUTINES);
-  const [calendarEvents, setCalendarEvents] = useState(INITIAL_CALENDAR_EVENTS);
-  const [northStars, setNorthStars] = useState(INITIAL_NORTH_STARS);
-  const [missions, setMissions] = useState(INITIAL_MISSIONS);
-  const [activityLedger, setActivityLedger] = useState<ActivityLedgerEntry[]>(INITIAL_ACTIVITY_LEDGER);
+  const [activityLedger, setActivityLedger] = useState<ActivityLedgerEntry[]>([]);
+  const [config, setConfig] = useState<UserIntegrationsConfig>({
+    googleConnected: false,
+    whatsappPhoneNumberId: '',
+    whatsappAccessToken: '',
+    whatsappRecipientPhone: '',
+    geminiApiKey: '',
+  });
 
-  // Active Routine Player Modal
+  const [calendarEvents] = useState(INITIAL_CALENDAR_EVENTS);
+  const [northStars] = useState(INITIAL_NORTH_STARS);
+  const [missions] = useState(INITIAL_MISSIONS);
+
   const [selectedRoutine, setSelectedRoutine] = useState<Routine | null>(null);
-
-  // Notification Toast State
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
-    setTimeout(() => {
-      setToastMessage(null);
-    }, 3800);
+    setTimeout(() => setToastMessage(null), 3500);
   };
 
-  // Toggle Emergency / Sick Shield
+  // Load from Storage & handle Google OAuth URL redirects on mount
+  useEffect(() => {
+    setCards(storage.getCards());
+    setRawInputs(storage.getInputs());
+    setRoutines(storage.getRoutines());
+    setActivityLedger(storage.getLedger());
+    setEmergencyMode(storage.getEmergency());
+    const storedConfig = storage.getConfig();
+
+    // Check for Google OAuth callback params
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('google_connected') === 'true') {
+        const email = params.get('google_email') || 'Connected Account';
+        const token = params.get('access_token') || '';
+        const updated = {
+          ...storedConfig,
+          googleConnected: true,
+          googleEmail: email,
+          googleAccessToken: token,
+        };
+        storage.setConfig(updated);
+        setConfig(updated);
+        showToast(`Google Account Linked: ${email}`);
+        window.history.replaceState({}, '', window.location.pathname);
+      } else if (params.get('google_error')) {
+        showToast(`Google Auth Failed: ${params.get('google_error')}`);
+        window.history.replaceState({}, '', window.location.pathname);
+      } else {
+        setConfig(storedConfig);
+      }
+    }
+  }, []);
+
+  // Sync state mutations to storage
+  const updateCards = (newCards: ActionCard[]) => {
+    setCards(newCards);
+    storage.setCards(newCards);
+  };
+
+  const updateInputs = (newInputs: RawInputItem[]) => {
+    setRawInputs(newInputs);
+    storage.setInputs(newInputs);
+  };
+
+  const updateRoutines = (newRoutines: Routine[]) => {
+    setRoutines(newRoutines);
+    storage.setRoutines(newRoutines);
+  };
+
+  const updateLedger = (newLedger: ActivityLedgerEntry[]) => {
+    setActivityLedger(newLedger);
+    storage.setLedger(newLedger);
+  };
+
+  // Toggle Emergency / Sick Mode
   const handleToggleEmergency = () => {
     const next = !emergencyMode;
     setEmergencyMode(next);
+    storage.setEmergency(next);
 
     const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const logEntry: ActivityLedgerEntry = {
       id: `act-${Date.now()}`,
       timestamp: now,
       actionType: next ? 'SICK_SHIELD_ACTIVATED' : 'SICK_SHIELD_DEACTIVATED',
-      cardTitle: next ? '🚨 Emergency Sick Shield Activated' : '🛡️ Emergency Shield Stood Down',
+      cardTitle: next ? 'Emergency Sick Shield Active' : 'Shield Stood Down',
       categoryLabel: '🛡️ PROTOCOL',
       details: next
-        ? 'Quarantined all non-essential routines & secondary action cards. Habit streaks frozen under SICK_DAY_PAUSE status.'
-        : 'Restored all quarantined routines and action cards to deck with zero data loss.',
+        ? 'Quarantined non-essential action cards. Streaks frozen with SICK_DAY_PAUSE.'
+        : 'Restored all quarantined tasks to Cockpit deck with zero data loss.',
       actor: 'User (Principal)',
       streakStatus: next ? 'SICK_DAY_PAUSE' : 'COMPLETED',
     };
 
-    setActivityLedger((prev) => [logEntry, ...prev]);
-    showToast(next ? 'Emergency Shield Active: Non-essential tasks quarantined.' : 'Emergency Shield deactivated: All systems restored.');
+    updateLedger([logEntry, ...activityLedger]);
+    showToast(next ? '🚨 Emergency Shield Active: Non-essentials quarantined.' : 'Shield Deactivated: All tasks restored.');
   };
 
-  // 1. APPROVE & EXECUTE ACTION
+  // 1. APPROVE & EXECUTE (Real API Dispatches)
   const handleApproveCard = async (card: ActionCard) => {
     const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-    // Mark card approved and remove from active pending deck
-    setCards((prev) => prev.map((c) => (c.id === card.id ? { ...c, status: 'approved' } : c)));
+    // Mark card approved
+    const updated = cards.map((c) => (c.id === card.id ? { ...c, status: 'approved' as const } : c));
+    updateCards(updated);
 
-    // External adapter dispatch
-    if (card.previewType === 'document') {
-      await googleWorkspace.exportDocArtifact(card.previewData.docTitle || card.headline, card.synthesis);
-    } else if (card.previewType === 'invoice') {
-      await googleWorkspace.appendLedgerRow('Executive Disbursements', {
-        vendor: card.previewData.vendor || 'Vendor',
-        amount: card.previewData.amount || '$0',
-        date: now,
-      });
+    // If Google connected, dispatch real Google Task
+    if (config.googleConnected && config.googleAccessToken) {
+      try {
+        await fetch('/api/integrations/google/tasks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: card.headline,
+            notes: card.synthesis,
+            accessToken: config.googleAccessToken,
+          }),
+        });
+      } catch (e) {
+        console.warn('Google Task dispatch error', e);
+      }
+    }
+
+    // If WhatsApp configured, dispatch real WhatsApp alert
+    if (config.whatsappPhoneNumberId && config.whatsappAccessToken && config.whatsappRecipientPhone) {
+      try {
+        await fetch('/api/integrations/whatsapp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            phoneNumberId: config.whatsappPhoneNumberId,
+            accessToken: config.whatsappAccessToken,
+            recipientPhone: config.whatsappRecipientPhone,
+            messageText: `🚀 LifeOS Approved: ${card.headline}`,
+          }),
+        });
+      } catch (e) {
+        console.warn('WhatsApp alert error', e);
+      }
     }
 
     const logEntry: ActivityLedgerEntry = {
@@ -98,21 +180,19 @@ export default function LifeOSApp() {
       actionType: 'EXECUTE',
       cardTitle: card.headline,
       categoryLabel: card.categoryLabel,
-      details: `Executed immediately by Chief of Staff. Target: ${card.targetEntity || 'System'}. Dispatched via integration adapter.`,
+      details: `Executed by Chief of Staff. Target: ${card.targetEntity || 'System'}.`,
       actor: 'Executive Chief of Staff',
     };
 
-    setActivityLedger((prev) => [logEntry, ...prev]);
-    showToast(`🚀 Dispatched: "${card.headline.slice(0, 48)}..."`);
+    updateLedger([logEntry, ...activityLedger]);
+    showToast(`🚀 Dispatched: "${card.headline.slice(0, 36)}..."`);
   };
 
-  // 2. SNOOZE / DEFER ACTION
+  // 2. SNOOZE / DEFER
   const handleSnoozeCard = (card: ActionCard, deferLabel: string) => {
     const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-    setCards((prev) =>
-      prev.map((c) => (c.id === card.id ? { ...c, status: 'snoozed', wakeAt: deferLabel } : c))
-    );
+    const updated = cards.map((c) => (c.id === card.id ? { ...c, status: 'snoozed' as const, wakeAt: deferLabel } : c));
+    updateCards(updated);
 
     const logEntry: ActivityLedgerEntry = {
       id: `act-${Date.now()}`,
@@ -120,19 +200,19 @@ export default function LifeOSApp() {
       actionType: 'SNOOZE',
       cardTitle: card.headline,
       categoryLabel: card.categoryLabel,
-      details: `Deferred to: ${deferLabel}. Removed from viewport deck until wake trigger.`,
+      details: `Deferred to: ${deferLabel}. Removed from deck.`,
       actor: 'User (Principal)',
     };
 
-    setActivityLedger((prev) => [logEntry, ...prev]);
+    updateLedger([logEntry, ...activityLedger]);
     showToast(`🕒 Snoozed until ${deferLabel}`);
   };
 
-  // 3. QUICK CRITIQUE RE-DRAFT IN PLACE
+  // 3. QUICK CRITIQUE RE-DRAFT
   const handleCritiqueUpdate = (updatedCard: ActionCard) => {
     const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-    setCards((prev) => prev.map((c) => (c.id === updatedCard.id ? updatedCard : c)));
+    const updated = cards.map((c) => (c.id === updatedCard.id ? updatedCard : c));
+    updateCards(updated);
 
     const logEntry: ActivityLedgerEntry = {
       id: `act-${Date.now()}`,
@@ -140,19 +220,19 @@ export default function LifeOSApp() {
       actionType: 'CRITIQUE_REDRAFT',
       cardTitle: updatedCard.headline,
       categoryLabel: updatedCard.categoryLabel,
-      details: `Voice critique processed and card re-drafted in place by Gemini Chief of Staff.`,
+      details: `Re-drafted in place based on voice critique.`,
       actor: 'User (Principal)',
     };
 
-    setActivityLedger((prev) => [logEntry, ...prev]);
-    showToast('✨ Voice critique applied: Card re-drafted in place.');
+    updateLedger([logEntry, ...activityLedger]);
+    showToast('✨ Critique applied: Card re-drafted in place.');
   };
 
-  // 4. SAVE TO DRAFTS / MANUAL
+  // 4. SAVE TO DRAFTS
   const handleSaveToDrafts = (card: ActionCard) => {
     const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-    setCards((prev) => prev.map((c) => (c.id === card.id ? { ...c, status: 'drafted' } : c)));
+    const updated = cards.map((c) => (c.id === card.id ? { ...c, status: 'drafted' as const } : c));
+    updateCards(updated);
 
     const logEntry: ActivityLedgerEntry = {
       id: `act-${Date.now()}`,
@@ -160,19 +240,19 @@ export default function LifeOSApp() {
       actionType: 'DRAFT_SAVED',
       cardTitle: card.headline,
       categoryLabel: card.categoryLabel,
-      details: `Saved to native user drafts folder. Agent authority released for manual handling.`,
+      details: `Saved to native drafts. Agent control released.`,
       actor: 'User (Principal)',
     };
 
-    setActivityLedger((prev) => [logEntry, ...prev]);
-    showToast('📥 Moved to Native Drafts folder.');
+    updateLedger([logEntry, ...activityLedger]);
+    showToast('📥 Saved to Drafts.');
   };
 
   // 5. KILL MISSION
   const handleKillMission = (card: ActionCard) => {
     const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-    setCards((prev) => prev.map((c) => (c.id === card.id ? { ...c, status: 'killed' } : c)));
+    const updated = cards.map((c) => (c.id === card.id ? { ...c, status: 'killed' as const } : c));
+    updateCards(updated);
 
     const logEntry: ActivityLedgerEntry = {
       id: `act-${Date.now()}`,
@@ -180,40 +260,39 @@ export default function LifeOSApp() {
       actionType: 'KILLED',
       cardTitle: card.headline,
       categoryLabel: card.categoryLabel,
-      details: `Permanently rejected. Negative user preference rule indexed for future task generation.`,
+      details: `Rejected permanently.`,
       actor: 'User (Principal)',
     };
 
-    setActivityLedger((prev) => [logEntry, ...prev]);
-    showToast('🗑️ Mission Killed: Removed from ledger.');
+    updateLedger([logEntry, ...activityLedger]);
+    showToast('🗑️ Card Killed.');
   };
 
-  // Handle Routine Steps Update
+  // Routine Step Update
   const handleUpdateRoutineSteps = (routineId: string, steps: RoutineStep[]) => {
-    setRoutines((prev) =>
-      prev.map((r) => (r.id === routineId ? { ...r, steps } : r))
-    );
+    const updated = routines.map((r) => (r.id === routineId ? { ...r, steps } : r));
+    updateRoutines(updated);
   };
 
-  // Handle New Ingestion from Input Stream (Spawns a new Action Card)
+  // Ingestion from Voice / Dropzone / Scratchpad
   const handleAddNewInput = (input: RawInputItem, resultingCard?: ActionCard) => {
-    setRawInputs((prev) => [input, ...prev]);
+    const newInputs = [input, ...rawInputs];
+    updateInputs(newInputs);
 
     if (resultingCard) {
-      setCards((prev) => [resultingCard, ...prev]);
-      showToast(`🎯 Ingested & spawned Action Card: "${resultingCard.headline.slice(0, 40)}..."`);
+      const newCards = [resultingCard, ...cards];
+      updateCards(newCards);
+      showToast(`🎯 Directive formulated into Cockpit card`);
     } else {
       showToast('📥 Directive logged into raw history feed.');
     }
   };
 
-  // Reset Demo Cards for easy evaluator testing
   const handleResetDemoCards = () => {
-    setCards(INITIAL_ACTION_CARDS);
-    showToast('🔄 Demo Action Cards restored to Cockpit Deck.');
+    updateCards(INITIAL_ACTION_CARDS);
+    showToast('🔄 Demo cards restored.');
   };
 
-  // Calculate quarantined vs active keystone counts
   const pendingCards = cards.filter((c) => c.status === 'pending');
   const quarantinedCount = pendingCards.filter((c) => !c.isKeystone).length;
   const keystoneCount = pendingCards.filter((c) => c.isKeystone).length;
@@ -222,17 +301,19 @@ export default function LifeOSApp() {
   const activeRoutine = routines.find((r) => r.isActiveNow) || routines[0];
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#090d16] text-slate-100 selection:bg-indigo-500 selection:text-white pb-16">
-      {/* Top Bar Navigation & Emergency Shield Switch */}
+    <div className="min-h-screen flex flex-col bg-[#090d16] text-slate-100 selection:bg-indigo-500 selection:text-white pb-20 md:pb-12">
+      {/* Top Bar Header */}
       <TopBar
         currentView={currentView}
         onViewChange={(v) => setCurrentView(v)}
         emergencyMode={emergencyMode}
         onToggleEmergency={handleToggleEmergency}
         pendingCardCount={visibleCardCount}
+        onOpenSettings={() => setIsSettingsOpen(true)}
+        isGoogleConnected={config.googleConnected}
       />
 
-      {/* Emergency / Sick Shield Active Warning Banner */}
+      {/* Emergency / Sick Shield Warning */}
       <EmergencyBanner
         active={emergencyMode}
         onStandDown={handleToggleEmergency}
@@ -240,12 +321,11 @@ export default function LifeOSApp() {
         keystoneCount={keystoneCount}
       />
 
-      {/* Main Viewport Content Area */}
-      <main className="flex-1 w-full max-w-7xl mx-auto px-4 lg:px-8 py-6 space-y-8">
-        {/* VIEW 1: THE COCKPIT (Approvals & Today's Runway) */}
+      {/* Main View Area (Mobile-First, Simplified) */}
+      <main className="flex-1 w-full max-w-4xl mx-auto px-3 sm:px-6 py-4 space-y-5">
+        {/* COCKPIT VIEW */}
         {currentView === 'cockpit' && (
-          <div className="space-y-8 animate-fade-in">
-            {/* The Single-Card Viewport Deck */}
+          <div className="space-y-5 animate-fade-in">
             <CockpitDeck
               cards={cards}
               emergencyMode={emergencyMode}
@@ -257,7 +337,6 @@ export default function LifeOSApp() {
               onResetDemoCards={handleResetDemoCards}
             />
 
-            {/* Today's Runway (Ambient Daily Focus Layer) */}
             <Runway
               activeRoutine={activeRoutine}
               allRoutines={routines}
@@ -269,35 +348,30 @@ export default function LifeOSApp() {
           </div>
         )}
 
-        {/* VIEW 2: THE INPUT STREAM (Omnichannel Raw Ingestion) */}
+        {/* INPUT STREAM VIEW */}
         {currentView === 'input' && (
           <div className="animate-fade-in">
             <InputStreamPanel
               inputs={rawInputs}
               onAddNewInput={handleAddNewInput}
-              onNavigateToCard={(cardId) => {
-                soundManager.playTap();
-                setCurrentView('cockpit');
-              }}
+              onNavigateToCard={() => setCurrentView('cockpit')}
+              onOpenSettings={() => setIsSettingsOpen(true)}
             />
           </div>
         )}
 
-        {/* VIEW 3: MISSIONS & GOALS */}
+        {/* MISSIONS VIEW */}
         {currentView === 'missions' && (
           <div className="animate-fade-in">
             <MissionsPanel
               missions={missions}
               northStars={northStars}
-              onNavigateToCockpit={() => {
-                soundManager.playTap();
-                setCurrentView('cockpit');
-              }}
+              onNavigateToCockpit={() => setCurrentView('cockpit')}
             />
           </div>
         )}
 
-        {/* VIEW 4: ACTIVITY LEDGER & AUDIT TRAIL */}
+        {/* LEDGER VIEW */}
         {currentView === 'ledger' && (
           <div className="animate-fade-in">
             <ActivityLedgerPanel
@@ -308,7 +382,15 @@ export default function LifeOSApp() {
         )}
       </main>
 
-      {/* Interactive Routine Player Modal with Dual Timers */}
+      {/* Sticky Bottom Navigation on Mobile */}
+      <MobileNavBar
+        currentView={currentView}
+        onViewChange={(v) => setCurrentView(v)}
+        onOpenSettings={() => setIsSettingsOpen(true)}
+        pendingCount={visibleCardCount}
+      />
+
+      {/* Routine Player Modal */}
       <RoutinePlayerModal
         routine={selectedRoutine}
         isOpen={Boolean(selectedRoutine)}
@@ -317,9 +399,17 @@ export default function LifeOSApp() {
         onUpdateRoutineSteps={handleUpdateRoutineSteps}
       />
 
+      {/* Connected Accounts Modal (Google OAuth, WhatsApp, Gemini Key) */}
+      <IntegrationsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        config={config}
+        onUpdateConfig={(cfg) => setConfig(cfg)}
+      />
+
       {/* Floating Action Toast */}
       {toastMessage && (
-        <aside aria-label="Notification" className="fixed bottom-6 right-6 z-50 px-4 py-3 rounded-2xl bg-slate-900 border border-indigo-500/50 shadow-2xl text-xs font-semibold text-white flex items-center gap-2.5 backdrop-blur-md animate-fade-in">
+        <aside aria-label="Notification" className="fixed bottom-16 md:bottom-6 right-4 md:right-6 z-50 px-3.5 py-2.5 rounded-2xl bg-slate-900 border border-indigo-500/50 shadow-2xl text-xs font-semibold text-white flex items-center gap-2 backdrop-blur-md animate-fade-in">
           <span className="w-2 h-2 rounded-full bg-emerald-400" />
           <span>{toastMessage}</span>
         </aside>
