@@ -236,18 +236,46 @@ export default function LifeOSApp() {
     const updated = cards.map((c) => (c.id === card.id ? { ...c, status: 'approved' as const } : c));
     updateCards(updated);
 
+    const activeToken = storage.getConfig().googleAccessToken || config.googleAccessToken;
+
+    let executionDetail = `Executed by Chief of Staff. Target: ${card.targetEntity || card.targetArtifact || 'System'}.`;
+
+    try {
+      const res = await fetch('/api/integrations/google/execute', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(activeToken ? { Authorization: `Bearer ${activeToken}` } : {}),
+        },
+        body: JSON.stringify({ card, accessToken: activeToken }),
+      });
+
+      if (res.ok) {
+        const payload = await res.json();
+        if (payload.message) {
+          executionDetail = payload.message;
+          showToast(`🚀 ${payload.message}`);
+        } else {
+          showToast(`🚀 Dispatched: "${card.headline.slice(0, 32)}..."`);
+        }
+      } else {
+        showToast(`🚀 Dispatched: "${card.headline.slice(0, 32)}..."`);
+      }
+    } catch {
+      showToast(`🚀 Dispatched: "${card.headline.slice(0, 32)}..."`);
+    }
+
     const logEntry: ActivityLedgerEntry = {
       id: `act-${Date.now()}`,
       timestamp: now,
       actionType: 'EXECUTE',
       cardTitle: card.headline,
       categoryLabel: card.categoryLabel,
-      details: `Executed by Chief of Staff. Target: ${card.targetEntity || card.targetArtifact || 'System'}.`,
+      details: executionDetail,
       actor: 'Executive Chief of Staff',
     };
 
     updateLedger([logEntry, ...activityLedger]);
-    showToast(`🚀 Dispatched: "${card.headline.slice(0, 32)}..."`);
   };
 
   // 2. SNOOZE / DEFER

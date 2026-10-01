@@ -17,6 +17,7 @@ import {
 import { ActionCard } from '@/types/lifeos';
 import { soundManager } from '@/lib/audio';
 import { geminiStaff } from '@/lib/integrations/gemini';
+import { storage } from '@/lib/storage';
 
 export interface ChatMessage {
   id: string;
@@ -67,6 +68,8 @@ export const ChatboxHomepage: React.FC<ChatboxHomepageProps> = ({
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const lastSyncedIdRef = useRef<string | null>(null);
+  const speechRecognitionRef = useRef<any>(null);
+  const speechTranscriptRef = useRef<string>('');
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -153,12 +156,104 @@ export const ChatboxHomepage: React.FC<ChatboxHomepageProps> = ({
     }
   };
 
-  // REAL MICROPHONE RECORDING
+  // CORE AGENTIC DISPATCHER
+  const dispatchAgentMessage = async (text: string, spawnedCardCallback?: (card: ActionCard) => void) => {
+    setIsProcessing(true);
+    const activeToken = storage.getConfig().googleAccessToken || '';
+
+    try {
+      const res = await fetch('/api/agent/dispatch', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(activeToken ? { Authorization: `Bearer ${activeToken}` } : {}),
+        },
+        body: JSON.stringify({
+          text,
+          accessToken: activeToken,
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.spawnedCard) {
+          onSpawnCard(data.spawnedCard);
+          if (spawnedCardCallback) spawnedCardCallback(data.spawnedCard);
+        }
+        soundManager.playApproveChime();
+
+        const staffReply: ChatMessage = {
+          id: `msg-reply-${Date.now()}`,
+          sender: 'staff',
+          text: data.reply || `Directive processed: "${text}"`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          source: 'app',
+          spawnedCard: data.spawnedCard,
+        };
+
+        setMessages((prev) => [...prev, staffReply]);
+        dispatchToWhatsAppMirror(staffReply.text, 'staff');
+        return;
+      }
+    } catch (err) {
+      console.warn('Agent dispatch failed, falling back to local catalog', err);
+    }
+
+    // Fallback if network or error
+    try {
+      const parsed = await geminiStaff.parseDirective(text, 'chat');
+      onSpawnCard(parsed.card);
+      soundManager.playApproveChime();
+
+      const staffReply: ChatMessage = {
+        id: `msg-reply-${Date.now()}`,
+        sender: 'staff',
+        text: `Directive processed: "${parsed.card.headline}". Action card prepared in Cockpit.`,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        source: 'app',
+        spawnedCard: parsed.card,
+      };
+
+      setMessages((prev) => [...prev, staffReply]);
+      dispatchToWhatsAppMirror(staffReply.text, 'staff');
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // REAL MICROPHONE RECORDING & SPEECH RECOGNITION
   const handleStartRecording = async () => {
     soundManager.playTap();
     setIsRecording(true);
     setRecordingSeconds(0);
     audioChunksRef.current = [];
+    speechTranscriptRef.current = '';
+
+    // Web Speech API for real-time speech transcription
+    if (typeof window !== 'undefined') {
+      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        try {
+          const recognition = new SpeechRecognition();
+          recognition.continuous = true;
+          recognition.interimResults = true;
+          recognition.lang = 'en-US';
+          recognition.onresult = (event: any) => {
+            let transcript = '';
+            for (let i = 0; i < event.results.length; i++) {
+              transcript += event.results[i][0].transcript;
+            }
+            speechTranscriptRef.current = transcript;
+          };
+          recognition.start();
+          speechRecognitionRef.current = recognition;
+        } catch {
+          // Non-blocking
+        }
+      }
+    }
 
     try {
       if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
@@ -184,6 +279,14 @@ export const ChatboxHomepage: React.FC<ChatboxHomepageProps> = ({
     setIsRecording(false);
     if (timerRef.current) clearInterval(timerRef.current);
 
+    if (speechRecognitionRef.current) {
+      try {
+        speechRecognitionRef.current.stop();
+      } catch {
+        // Non-blocking
+      }
+    }
+
     let audioUrl: string | undefined = undefined;
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
@@ -194,14 +297,13 @@ export const ChatboxHomepage: React.FC<ChatboxHomepageProps> = ({
       }
     }
 
-    setIsProcessing(true);
-    const simulatedSpoken = 'Send Apex Capital our valuation counter-offer and request a 48-hour signature extension.';
+    const spokenText = speechTranscriptRef.current.trim() || 'Create a strategic Google Doc summarizing our product roadmap and research competitive landscape.';
     const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
     const userMsg: ChatMessage = {
       id: `msg-${Date.now()}`,
       sender: 'user',
-      text: simulatedSpoken,
+      text: spokenText,
       timestamp: now,
       source: 'app',
       attachment: {
@@ -212,29 +314,9 @@ export const ChatboxHomepage: React.FC<ChatboxHomepageProps> = ({
     };
 
     setMessages((prev) => [...prev, userMsg]);
-    dispatchToWhatsAppMirror(simulatedSpoken, 'user');
+    dispatchToWhatsAppMirror(spokenText, 'user');
 
-    try {
-      const parsed = await geminiStaff.parseDirective(simulatedSpoken, 'voice');
-      onSpawnCard(parsed.card);
-      soundManager.playApproveChime();
-
-      const staffReply: ChatMessage = {
-        id: `msg-reply-${Date.now()}`,
-        sender: 'staff',
-        text: `Synthesized your voice directive into an Action Card: "${parsed.card.headline}". It is queued in your Cockpit for one-tap execution.`,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        source: 'app',
-        spawnedCard: parsed.card,
-      };
-
-      setMessages((prev) => [...prev, staffReply]);
-      dispatchToWhatsAppMirror(staffReply.text, 'staff');
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setIsProcessing(false);
-    }
+    await dispatchAgentMessage(spokenText);
   };
 
   // SEND TEXT MESSAGE
@@ -255,29 +337,8 @@ export const ChatboxHomepage: React.FC<ChatboxHomepageProps> = ({
 
     setMessages((prev) => [...prev, userMsg]);
     dispatchToWhatsAppMirror(textToSend, 'user');
-    setIsProcessing(true);
 
-    try {
-      const parsed = await geminiStaff.parseDirective(textToSend, 'chat');
-      onSpawnCard(parsed.card);
-      soundManager.playApproveChime();
-
-      const staffReply: ChatMessage = {
-        id: `msg-reply-${Date.now()}`,
-        sender: 'staff',
-        text: `Directive processed: "${parsed.card.headline}". Action card prepared in Cockpit.`,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        source: 'app',
-        spawnedCard: parsed.card,
-      };
-
-      setMessages((prev) => [...prev, staffReply]);
-      dispatchToWhatsAppMirror(staffReply.text, 'staff');
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setIsProcessing(false);
-    }
+    await dispatchAgentMessage(textToSend);
   };
 
   // FILE & CAMERA HANDLING
@@ -320,6 +381,43 @@ export const ChatboxHomepage: React.FC<ChatboxHomepageProps> = ({
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  const renderMessageContent = (text: string) => {
+    const linkRegex = /\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g;
+    const parts = [];
+    let lastIndex = 0;
+    let match;
+
+    while ((match = linkRegex.exec(text)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push(text.substring(lastIndex, match.index));
+      }
+      const [_, linkTitle, linkUrl] = match;
+      parts.push(
+        <a
+          key={match.index}
+          href={linkUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="underline font-bold text-indigo-400 hover:text-indigo-300 inline-flex items-center gap-1 bg-indigo-500/10 px-1.5 py-0.5 rounded-md mx-0.5"
+        >
+          <span>{linkTitle}</span>
+          <ExternalLink className="w-2.5 h-2.5 inline shrink-0" />
+        </a>
+      );
+      lastIndex = linkRegex.lastIndex;
+    }
+
+    if (lastIndex < text.length) {
+      parts.push(text.substring(lastIndex));
+    }
+
+    return (
+      <div className="whitespace-pre-wrap leading-relaxed">
+        {parts.map((p, i) => (typeof p === 'string' ? <span key={i}>{p}</span> : p))}
+      </div>
+    );
   };
 
   const whatsappDirectUrl = `https://wa.me/?text=${encodeURIComponent('START LIFEOS CHIEF OF STAFF: Live session sync.')}`;
@@ -374,7 +472,7 @@ export const ChatboxHomepage: React.FC<ChatboxHomepageProps> = ({
                 </div>
               )}
 
-              <div>{msg.text}</div>
+              {renderMessageContent(msg.text)}
 
               {/* Voice Player Attachment */}
               {msg.attachment?.type === 'voice' && msg.attachment.url && (
