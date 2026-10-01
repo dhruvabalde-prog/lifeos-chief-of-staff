@@ -26,65 +26,30 @@ class GeminiStaffAdapter {
 
   // Parse voice directive or text into a structured Action Card
   public async parseDirective(rawText: string, inputType: string): Promise<ProcessDirectiveResponse> {
-    const apiKey = this.getApiKey();
     const id = `card-${Date.now()}`;
     const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-    // If Gemini key is available, call Gemini models
-    if (apiKey) {
+    // In browser, route through backend AI endpoint to protect API key and use free-tier model routing
+    if (typeof window !== 'undefined') {
       try {
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+        const res = await fetch('/api/ai/process', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            contents: [
-              {
-                parts: [
-                  {
-                    text: `You are an Autonomous Executive Chief of Staff (LifeOS). Convert this directive into a structured Action Card JSON.
-Directive: "${rawText}"
-Return valid JSON only matching schema:
-{
-  "category": "responses" | "artifacts" | "protocols" | "lifeops",
-  "categoryLabel": string,
-  "headline": string,
-  "synthesis": string,
-  "urgency": "critical" | "high" | "medium" | "low",
-  "isKeystone": boolean,
-  "previewType": "email" | "document" | "invoice" | "checklist" | "data",
-  "previewData": { "to"?: string, "subject"?: string, "body"?: string, "docTitle"?: string, "vendor"?: string, "amount"?: string }
-}`,
-                  },
-                ],
-              },
-            ],
-            generationConfig: { responseMimeType: 'application/json' },
+            action: 'parse_directive',
+            text: rawText,
+            inputType,
           }),
         });
 
-        if (response.ok) {
-          const result = await response.json();
-          const parsed = JSON.parse(result.candidates[0].content.parts[0].text);
-          return {
-            rawTranscription: rawText,
-            card: {
-              id,
-              category: parsed.category || 'responses',
-              categoryLabel: parsed.categoryLabel || '💬 DIRECTIVE RESPONSE',
-              sourceContext: `Synthesized from voice directive (${now})`,
-              headline: parsed.headline || 'Execute Delegated Directive',
-              synthesis: parsed.synthesis || 'Chief of Staff has formulated the execution protocol.',
-              urgency: parsed.urgency || 'high',
-              isKeystone: Boolean(parsed.isKeystone),
-              status: 'pending',
-              createdAt: new Date().toISOString(),
-              previewType: parsed.previewType || 'email',
-              previewData: parsed.previewData || { body: rawText },
-            },
-          };
+        if (res.ok) {
+          const json = await res.json();
+          if (json.result) {
+            return json.result;
+          }
         }
-      } catch (e) {
-        console.warn('Gemini API call failed, falling back to executive heuristic parser', e);
+      } catch (err) {
+        console.warn('Backend AI router call failed, falling back to local catalog parser', err);
       }
     }
 
@@ -326,45 +291,27 @@ Return valid JSON only matching schema:
 
   // Quick Critique: Takes user's voice critique ("make tone firmer, drop price 10%") and re-drafts in-place!
   public async redraftWithCritique(card: ActionCard, critiqueVoiceText: string): Promise<RedraftResponse> {
-    const apiKey = this.getApiKey();
-
-    if (apiKey) {
+    // In browser, route through backend AI endpoint
+    if (typeof window !== 'undefined') {
       try {
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+        const res = await fetch('/api/ai/process', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            contents: [
-              {
-                parts: [
-                  {
-                    text: `You are LifeOS Executive Chief of Staff. Modify this existing Action Card based on the user's voice critique.
-CURRENT HEADLINE: ${card.headline}
-CURRENT SYNTHESIS: ${card.synthesis}
-CURRENT PREVIEW: ${JSON.stringify(card.previewData)}
-USER CRITIQUE: "${critiqueVoiceText}"
-
-Respond with ONLY valid JSON:
-{
-  "headline": string,
-  "synthesis": string,
-  "previewData": object matching previous preview structure with applied changes,
-  "explanation": "Summary of adjustments made"
-}`,
-                  },
-                ],
-              },
-            ],
-            generationConfig: { responseMimeType: 'application/json' },
+            action: 'critique',
+            card,
+            critiqueText: critiqueVoiceText,
           }),
         });
 
-        if (response.ok) {
-          const res = await response.json();
-          return JSON.parse(res.candidates[0].content.parts[0].text);
+        if (res.ok) {
+          const json = await res.json();
+          if (json.redraft) {
+            return json.redraft;
+          }
         }
-      } catch (e) {
-        console.warn('Gemini critique call failed, falling back', e);
+      } catch (err) {
+        console.warn('Backend critique router call failed, falling back to heuristic engine', err);
       }
     }
 
