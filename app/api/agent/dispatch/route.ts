@@ -174,6 +174,26 @@ export async function POST(request: NextRequest) {
         }
       } else {
         replyText = `📝 **Note Recorded:** "${noteContent || text}". Queued in Cockpit deck.`;
+        spawnedCard = {
+          id: `card-note-${Date.now()}`,
+          category: 'artifacts',
+          categoryLabel: '📝 GOOGLE NOTE',
+          sourceContext: 'LifeOS Keep Notes Agent',
+          headline: noteTitle,
+          synthesis: noteContent || 'Quick note preserved to Google Drive.',
+          urgency: 'low',
+          isKeystone: false,
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+          targetArtifact: 'Google Drive (/LifeOS/Notes)',
+          googleService: 'Google Docs',
+          previewType: 'document',
+          previewData: {
+            docTitle: noteTitle,
+            sections: [{ title: 'Note Content', content: noteContent || text }],
+          },
+        };
+        return NextResponse.json({ success: true, reply: replyText, spawnedCard, toolUsed: 'google_notes_staged' });
       }
     }
 
@@ -221,6 +241,26 @@ export async function POST(request: NextRequest) {
         }
       } else {
         replyText = `📄 **Google Doc Staged:** "${title}". Connect your Google account in Settings to sync it directly to Google Drive.`;
+        spawnedCard = {
+          id: `card-doc-${Date.now()}`,
+          category: 'artifacts',
+          categoryLabel: '📄 GOOGLE DOC',
+          sourceContext: 'Created via Chief of Staff Chat',
+          headline: `Document Staged: ${title}`,
+          synthesis: `Google Doc staged: ${title}`,
+          urgency: 'medium',
+          isKeystone: false,
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+          targetArtifact: 'Google Drive',
+          googleService: 'Google Docs',
+          previewType: 'document',
+          previewData: {
+            docTitle: title,
+            sections: [{ title: 'Document Title', content: title }],
+          },
+        };
+        return NextResponse.json({ success: true, reply: replyText, spawnedCard, toolUsed: 'google_docs_staged' });
       }
     }
 
@@ -270,6 +310,23 @@ export async function POST(request: NextRequest) {
         }
       } else {
         replyText = `📊 **Google Sheet Staged:** "${title}". Connect Google Workspace in Settings to create live spreadsheets.`;
+        spawnedCard = {
+          id: `card-sheet-${Date.now()}`,
+          category: 'artifacts',
+          categoryLabel: '📊 GOOGLE SHEET',
+          sourceContext: 'Created via Chief of Staff Chat',
+          headline: `Spreadsheet Staged: ${title}`,
+          synthesis: `Google Sheet ready for automated ledger inputs: ${title}`,
+          urgency: 'medium',
+          isKeystone: false,
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+          targetArtifact: 'Google Drive',
+          googleService: 'Google Sheets',
+          previewType: 'data',
+          previewData: { docTitle: title },
+        };
+        return NextResponse.json({ success: true, reply: replyText, spawnedCard, toolUsed: 'google_sheets_staged' });
       }
     }
 
@@ -314,6 +371,23 @@ export async function POST(request: NextRequest) {
         }
       } else {
         replyText = `📑 **Google Slides Deck Staged:** "${title}". Connect your Google account to create live Google Slides.`;
+        spawnedCard = {
+          id: `card-slide-${Date.now()}`,
+          category: 'artifacts',
+          categoryLabel: '📑 GOOGLE SLIDES',
+          sourceContext: 'Created via Chief of Staff Chat',
+          headline: `Presentation Staged: ${title}`,
+          synthesis: `Google Slides deck ready for collaboration: ${title}`,
+          urgency: 'low',
+          isKeystone: false,
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+          targetArtifact: 'Google Drive',
+          googleService: 'Google Docs',
+          previewType: 'document',
+          previewData: { docTitle: title },
+        };
+        return NextResponse.json({ success: true, reply: replyText, spawnedCard, toolUsed: 'google_slides_staged' });
       }
     }
 
@@ -366,6 +440,23 @@ export async function POST(request: NextRequest) {
         }
       } else {
         replyText = `✅ **Task Prepared:** "${taskTitle}". Queued in Cockpit deck.`;
+        spawnedCard = {
+          id: `card-task-${Date.now()}`,
+          category: 'lifeops',
+          categoryLabel: '✅ GOOGLE TASK',
+          sourceContext: 'LifeOS Tasks Agent',
+          headline: taskTitle,
+          synthesis: 'Task created and queued in Cockpit deck.',
+          urgency: 'high',
+          isKeystone: false,
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+          targetArtifact: 'Google Tasks (@default)',
+          googleService: 'Google Tasks',
+          previewType: 'checklist',
+          previewData: { docTitle: taskTitle },
+        };
+        return NextResponse.json({ success: true, reply: replyText, spawnedCard, toolUsed: 'google_tasks_staged' });
       }
     }
 
@@ -427,6 +518,23 @@ export async function POST(request: NextRequest) {
         }
       } else {
         replyText = `📅 **Calendar Event Staged:** "${summary}". Connect Google Calendar in Settings to book directly.`;
+        spawnedCard = {
+          id: `card-cal-${Date.now()}`,
+          category: 'lifeops',
+          categoryLabel: '📅 GOOGLE CALENDAR',
+          sourceContext: 'Google Calendar API',
+          headline: `Scheduled: ${summary}`,
+          synthesis: `Calendar event staged for ${new Date(start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`,
+          urgency: 'high',
+          isKeystone: false,
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+          targetArtifact: 'Google Calendar',
+          googleService: 'Google Calendar',
+          previewType: 'checklist',
+          previewData: { docTitle: summary },
+        };
+        return NextResponse.json({ success: true, reply: replyText, spawnedCard, toolUsed: 'google_calendar_staged' });
       }
     }
 
