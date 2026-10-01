@@ -3,14 +3,13 @@
 import React, { useState, useEffect } from 'react';
 import { TopBar } from '@/components/TopBar';
 import { EmergencyBanner } from '@/components/EmergencyBanner';
-import { CockpitDeck } from '@/components/CockpitDeck';
-import { Runway } from '@/components/Runway';
+import { ApprovalsViewportDeck } from '@/components/ApprovalsViewportDeck';
+import { ChatboxHomepage } from '@/components/ChatboxHomepage';
+import { OperationsView } from '@/components/OperationsView';
 import { RoutinePlayerModal } from '@/components/RoutinePlayerModal';
-import { InputStreamPanel } from '@/components/InputStreamPanel';
-import { MissionsPanel } from '@/components/MissionsPanel';
 import { ConnectModal } from '@/components/ConnectModal';
 import { LedgerModal } from '@/components/LedgerModal';
-import { MobileNavBar } from '@/components/MobileNavBar';
+import { MobileNavBar, MainViewTab } from '@/components/MobileNavBar';
 import {
   INITIAL_ACTION_CARDS,
   INITIAL_ROUTINES,
@@ -18,18 +17,16 @@ import {
   INITIAL_NORTH_STARS,
   INITIAL_MISSIONS,
 } from '@/lib/mockData';
-import { ActionCard, Routine, RoutineStep, RawInputItem, ActivityLedgerEntry } from '@/types/lifeos';
-import { soundManager } from '@/lib/audio';
+import { ActionCard, Routine, RoutineStep, ActivityLedgerEntry } from '@/types/lifeos';
 import { storage, UserIntegrationsConfig } from '@/lib/storage';
 
 export default function LifeOSApp() {
-  const [currentView, setCurrentView] = useState<'cockpit' | 'input' | 'missions'>('cockpit');
-  const [cockpitSubTab, setCockpitSubTab] = useState<'approvals' | 'runway'>('approvals');
+  // Centre page is homepage, a chatbox
+  const [currentView, setCurrentView] = useState<MainViewTab>('chat');
   const [emergencyMode, setEmergencyMode] = useState<boolean>(false);
 
   // Persistent States
   const [cards, setCards] = useState<ActionCard[]>(INITIAL_ACTION_CARDS);
-  const [rawInputs, setRawInputs] = useState<RawInputItem[]>([]);
   const [routines, setRoutines] = useState<Routine[]>(INITIAL_ROUTINES);
   const [activityLedger, setActivityLedger] = useState<ActivityLedgerEntry[]>([]);
   const [config, setConfig] = useState<UserIntegrationsConfig>({
@@ -58,7 +55,6 @@ export default function LifeOSApp() {
   // Load from Storage
   useEffect(() => {
     setCards(storage.getCards());
-    setRawInputs(storage.getInputs());
     setRoutines(storage.getRoutines());
     setActivityLedger(storage.getLedger());
     setEmergencyMode(storage.getEmergency());
@@ -69,11 +65,6 @@ export default function LifeOSApp() {
   const updateCards = (newCards: ActionCard[]) => {
     setCards(newCards);
     storage.setCards(newCards);
-  };
-
-  const updateInputs = (newInputs: RawInputItem[]) => {
-    setRawInputs(newInputs);
-    storage.setInputs(newInputs);
   };
 
   const updateRoutines = (newRoutines: Routine[]) => {
@@ -216,18 +207,11 @@ export default function LifeOSApp() {
     updateRoutines(updated);
   };
 
-  // Ingestion from Voice / Dropzone / Scratchpad
-  const handleAddNewInput = (input: RawInputItem, resultingCard?: ActionCard) => {
-    const newInputs = [input, ...rawInputs];
-    updateInputs(newInputs);
-
-    if (resultingCard) {
-      const newCards = [resultingCard, ...cards];
-      updateCards(newCards);
-      showToast(`🎯 Formulated Cockpit Card`);
-    } else {
-      showToast('📥 Logged into Ingestion Feed');
-    }
+  // Spawn Card from Chatbox or Voice Directive
+  const handleSpawnCard = (newCard: ActionCard) => {
+    const updated = [newCard, ...cards];
+    updateCards(updated);
+    showToast(`🎯 Formulated Cockpit Card: "${newCard.headline.slice(0, 24)}..."`);
   };
 
   const handleResetDemoCards = () => {
@@ -240,110 +224,75 @@ export default function LifeOSApp() {
   const keystoneCount = pendingCards.filter((c) => c.isKeystone).length;
   const visibleCardCount = emergencyMode ? keystoneCount : pendingCards.length;
 
-  const activeRoutine = routines.find((r) => r.isActiveNow) || routines[0];
-
   return (
-    <div className="min-h-screen flex flex-col bg-[#090d16] text-slate-100 selection:bg-indigo-500 selection:text-white pb-24 md:pb-12">
-      {/* Top Bar Header (Shield Icon only + Settings Dropdown) */}
-      <TopBar
-        emergencyMode={emergencyMode}
-        onToggleEmergency={handleToggleEmergency}
-        onOpenLedger={() => setIsLedgerOpen(true)}
-        onOpenConnect={() => setIsConnectOpen(true)}
-        onResetDemo={handleResetDemoCards}
-        isWhatsAppConnected={Boolean(config.whatsappRecipientPhone)}
-        isGoogleConnected={Boolean(config.googleConnected)}
-      />
+    <div className="h-dvh flex flex-col bg-[#090d16] text-slate-100 selection:bg-indigo-500 selection:text-white overflow-hidden">
+      {/* 1. TOP BAR HEADER (Shield Icon Only + Settings Dropdown) */}
+      <div className="shrink-0">
+        <TopBar
+          emergencyMode={emergencyMode}
+          onToggleEmergency={handleToggleEmergency}
+          onOpenLedger={() => setIsLedgerOpen(true)}
+          onOpenConnect={() => setIsConnectOpen(true)}
+          onResetDemo={handleResetDemoCards}
+          isWhatsAppConnected={Boolean(config.whatsappRecipientPhone)}
+          isGoogleConnected={Boolean(config.googleConnected)}
+        />
 
-      {/* Emergency / Sick Shield Warning */}
-      <EmergencyBanner
-        active={emergencyMode}
-        onStandDown={handleToggleEmergency}
-        quarantinedCount={quarantinedCount}
-        keystoneCount={keystoneCount}
-      />
+        {/* Emergency / Sick Shield Warning */}
+        <EmergencyBanner
+          active={emergencyMode}
+          onStandDown={handleToggleEmergency}
+          quarantinedCount={quarantinedCount}
+          keystoneCount={keystoneCount}
+        />
+      </div>
 
-      {/* Main View Area */}
-      <main className="flex-1 w-full max-w-2xl mx-auto px-3 sm:px-4 py-3 space-y-4">
-        {/* VIEW 1: COCKPIT */}
-        {currentView === 'cockpit' && (
-          <div className="space-y-4 animate-fade-in">
-            {/* Cockpit Sub-Tab Switcher */}
-            <div className="flex items-center justify-center">
-              <div className="flex bg-slate-900 p-1 rounded-2xl border border-slate-800 text-xs font-bold w-full max-w-xs justify-center">
-                <button
-                  onClick={() => { soundManager.playTap(); setCockpitSubTab('approvals'); }}
-                  className={`flex-1 py-1.5 px-3 rounded-xl transition text-center ${
-                    cockpitSubTab === 'approvals' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  ⚡ Approvals ({visibleCardCount})
-                </button>
-                <button
-                  onClick={() => { soundManager.playTap(); setCockpitSubTab('runway'); }}
-                  className={`flex-1 py-1.5 px-3 rounded-xl transition text-center ${
-                    cockpitSubTab === 'runway' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  🟢 Runway
-                </button>
-              </div>
-            </div>
-
-            {/* Sub-Page A: Single-Card Deck */}
-            {cockpitSubTab === 'approvals' && (
-              <CockpitDeck
-                cards={cards}
-                emergencyMode={emergencyMode}
-                onApprove={handleApproveCard}
-                onSnooze={handleSnoozeCard}
-                onCritiqueUpdate={handleCritiqueUpdate}
-                onSaveToDrafts={handleSaveToDrafts}
-                onKillMission={handleKillMission}
-                onResetDemoCards={handleResetDemoCards}
-              />
-            )}
-
-            {/* Sub-Page B: Today's Runway */}
-            {cockpitSubTab === 'runway' && (
-              <Runway
-                activeRoutine={activeRoutine}
-                allRoutines={routines}
-                calendarEvents={calendarEvents}
-                northStars={northStars}
-                emergencyMode={emergencyMode}
-                onOpenRoutine={(routine) => setSelectedRoutine(routine)}
-              />
-            )}
-          </div>
-        )}
-
-        {/* VIEW 2: DIRECT / INPUT STREAM */}
-        {currentView === 'input' && (
-          <div className="animate-fade-in">
-            <InputStreamPanel
-              inputs={rawInputs}
-              onAddNewInput={handleAddNewInput}
-              onNavigateToCard={() => {
-                setCurrentView('cockpit');
-                setCockpitSubTab('approvals');
-              }}
+      {/* 2. MAIN VIEW AREA (Fills exact viewport space above footer) */}
+      <main className="flex-1 min-h-0 overflow-hidden px-3 sm:px-4 pt-2 pb-16">
+        {/* VIEW 1: APPROVALS (Single card fits full viewport, zero scroll, auto swipe up) */}
+        {currentView === 'approvals' && (
+          <div className="h-full w-full animate-fade-in">
+            <ApprovalsViewportDeck
+              cards={cards}
+              emergencyMode={emergencyMode}
+              onApprove={handleApproveCard}
+              onSnooze={handleSnoozeCard}
+              onCritiqueUpdate={handleCritiqueUpdate}
+              onSaveToDrafts={handleSaveToDrafts}
+              onKillMission={handleKillMission}
+              onResetDemoCards={handleResetDemoCards}
             />
           </div>
         )}
 
-        {/* VIEW 3: MISSIONS */}
-        {currentView === 'missions' && (
-          <div className="animate-fade-in">
-            <MissionsPanel
-              missions={missions}
+        {/* VIEW 2: STAFF / CHATBOX (Centre page is homepage, input bar locked above footer) */}
+        {currentView === 'chat' && (
+          <div className="h-full w-full animate-fade-in">
+            <ChatboxHomepage
+              onSpawnCard={handleSpawnCard}
+              onNavigateToApprovals={() => setCurrentView('approvals')}
+            />
+          </div>
+        )}
+
+        {/* VIEW 3: OPERATIONS (Tasks, Routines, Calendar, North Stars, Goals with top scrollable pill filters) */}
+        {currentView === 'operations' && (
+          <div className="h-full w-full animate-fade-in">
+            <OperationsView
+              routines={routines}
+              calendarEvents={calendarEvents}
               northStars={northStars}
+              missions={missions}
+              cards={cards}
+              emergencyMode={emergencyMode}
+              onOpenRoutine={(routine) => setSelectedRoutine(routine)}
+              onApproveCard={handleApproveCard}
             />
           </div>
         )}
       </main>
 
-      {/* Sticky Bottom Navigation on Mobile (Only 3 Tabs) */}
+      {/* 3. STICKY BOTTOM NAVIGATION (3 Tabs: Approvals, Staff/Home, Operations) */}
       <MobileNavBar
         currentView={currentView}
         onViewChange={(v) => setCurrentView(v)}
@@ -378,7 +327,7 @@ export default function LifeOSApp() {
 
       {/* Floating Action Toast */}
       {toastMessage && (
-        <aside aria-label="Notification" className="fixed bottom-20 md:bottom-6 right-4 md:right-6 z-50 px-3.5 py-2.5 rounded-2xl bg-slate-900 border border-indigo-500/50 shadow-2xl text-xs font-semibold text-white flex items-center gap-2 backdrop-blur-md animate-fade-in">
+        <aside aria-label="Notification" className="fixed bottom-20 md:bottom-16 right-4 md:right-6 z-50 px-3.5 py-2.5 rounded-2xl bg-slate-900 border border-indigo-500/50 shadow-2xl text-xs font-semibold text-white flex items-center gap-2 backdrop-blur-md animate-fade-in">
           <span className="w-2 h-2 rounded-full bg-emerald-400" />
           <span>{toastMessage}</span>
         </aside>
