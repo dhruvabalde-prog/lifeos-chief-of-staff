@@ -49,7 +49,7 @@ export const ChatboxHomepage: React.FC<ChatboxHomepageProps> = ({
     {
       id: 'm-1',
       sender: 'staff',
-      text: 'Good afternoon. I am your Executive Chief of Staff. 3 priority action cards are waiting in your Cockpit. Speak a voice directive, snap a bill, or message me below.',
+      text: 'LifeOS Chief of Staff is online. Speak a voice directive, attach a document or photo, or message me below to delegate actions.',
       timestamp: 'Just now',
       source: 'app',
     },

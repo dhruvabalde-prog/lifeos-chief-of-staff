@@ -17,22 +17,22 @@ export interface UserIntegrationsConfig {
 }
 
 const STORAGE_KEYS = {
-  CARDS: 'lifeos_cards_v1',
-  ROUTINES: 'lifeos_routines_v1',
-  INPUTS: 'lifeos_inputs_v1',
-  LEDGER: 'lifeos_ledger_v1',
-  CONFIG: 'lifeos_config_v1',
-  EMERGENCY: 'lifeos_emergency_mode_v1',
+  CARDS: 'lifeos_cards_v2',
+  ROUTINES: 'lifeos_routines_v2',
+  INPUTS: 'lifeos_inputs_v2',
+  LEDGER: 'lifeos_ledger_v2',
+  CONFIG: 'lifeos_config_v2',
+  EMERGENCY: 'lifeos_emergency_mode_v2',
 };
 
 export const storage = {
   getCards(): ActionCard[] {
-    if (typeof window === 'undefined') return INITIAL_ACTION_CARDS;
+    if (typeof window === 'undefined') return [];
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.CARDS);
-      return saved ? JSON.parse(saved) : INITIAL_ACTION_CARDS;
+      return saved ? JSON.parse(saved) : [];
     } catch {
-      return INITIAL_ACTION_CARDS;
+      return [];
     }
   },
 
@@ -46,12 +46,12 @@ export const storage = {
   },
 
   getRoutines(): Routine[] {
-    if (typeof window === 'undefined') return INITIAL_ROUTINES;
+    if (typeof window === 'undefined') return [];
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.ROUTINES);
-      return saved ? JSON.parse(saved) : INITIAL_ROUTINES;
+      return saved ? JSON.parse(saved) : [];
     } catch {
-      return INITIAL_ROUTINES;
+      return [];
     }
   },
 
@@ -65,12 +65,12 @@ export const storage = {
   },
 
   getInputs(): RawInputItem[] {
-    if (typeof window === 'undefined') return INITIAL_RAW_INPUTS;
+    if (typeof window === 'undefined') return [];
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.INPUTS);
-      return saved ? JSON.parse(saved) : INITIAL_RAW_INPUTS;
+      return saved ? JSON.parse(saved) : [];
     } catch {
-      return INITIAL_RAW_INPUTS;
+      return [];
     }
   },
 
@@ -84,12 +84,12 @@ export const storage = {
   },
 
   getLedger(): ActivityLedgerEntry[] {
-    if (typeof window === 'undefined') return INITIAL_ACTIVITY_LEDGER;
+    if (typeof window === 'undefined') return [];
     try {
       const saved = localStorage.getItem(STORAGE_KEYS.LEDGER);
-      return saved ? JSON.parse(saved) : INITIAL_ACTIVITY_LEDGER;
+      return saved ? JSON.parse(saved) : [];
     } catch {
-      return INITIAL_ACTIVITY_LEDGER;
+      return [];
     }
   },
 

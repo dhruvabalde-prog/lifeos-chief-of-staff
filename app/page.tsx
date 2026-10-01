@@ -10,14 +10,7 @@ import { RoutinePlayerModal } from '@/components/RoutinePlayerModal';
 import { ConnectModal } from '@/components/ConnectModal';
 import { LedgerModal } from '@/components/LedgerModal';
 import { MobileNavBar, MainViewTab } from '@/components/MobileNavBar';
-import {
-  INITIAL_ACTION_CARDS,
-  INITIAL_ROUTINES,
-  INITIAL_CALENDAR_EVENTS,
-  INITIAL_NORTH_STARS,
-  INITIAL_MISSIONS,
-} from '@/lib/mockData';
-import { ActionCard, Routine, RoutineStep, ActivityLedgerEntry, CalendarEvent } from '@/types/lifeos';
+import { ActionCard, Routine, RoutineStep, ActivityLedgerEntry, CalendarEvent, NorthStarItem, Mission } from '@/types/lifeos';
 import { storage, UserIntegrationsConfig } from '@/lib/storage';
 
 export default function LifeOSApp() {
@@ -25,9 +18,9 @@ export default function LifeOSApp() {
   const [currentView, setCurrentView] = useState<MainViewTab>('chat');
   const [emergencyMode, setEmergencyMode] = useState<boolean>(false);
 
-  // Persistent States
-  const [cards, setCards] = useState<ActionCard[]>(INITIAL_ACTION_CARDS);
-  const [routines, setRoutines] = useState<Routine[]>(INITIAL_ROUTINES);
+  // Real Persistent States (Zero mock placeholders)
+  const [cards, setCards] = useState<ActionCard[]>([]);
+  const [routines, setRoutines] = useState<Routine[]>([]);
   const [activityLedger, setActivityLedger] = useState<ActivityLedgerEntry[]>([]);
   const [config, setConfig] = useState<UserIntegrationsConfig>({
     googleConnected: false,
@@ -37,9 +30,9 @@ export default function LifeOSApp() {
     geminiApiKey: '',
   });
 
-  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>(INITIAL_CALENDAR_EVENTS);
-  const [northStars] = useState(INITIAL_NORTH_STARS);
-  const [missions] = useState(INITIAL_MISSIONS);
+  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
+  const [northStars] = useState<NorthStarItem[]>([]);
+  const [missions] = useState<Mission[]>([]);
 
   // Modals
   const [selectedRoutine, setSelectedRoutine] = useState<Routine | null>(null);
@@ -153,8 +146,12 @@ export default function LifeOSApp() {
       const googleConnected = params.get('google_connected');
       const googleEmail = params.get('google_email');
       const accessToken = params.get('access_token');
+      const googleError = params.get('google_error');
 
-      if (googleConnected === 'true' && accessToken) {
+      if (googleError) {
+        showToast(`⚠️ Google Auth Error: ${decodeURIComponent(googleError)}`);
+        window.history.replaceState({}, '', window.location.pathname);
+      } else if (googleConnected === 'true' && accessToken) {
         const updatedConfig = {
           ...storage.getConfig(),
           googleConnected: true,
@@ -346,11 +343,6 @@ export default function LifeOSApp() {
     showToast(`🎯 Formulated Cockpit Card: "${newCard.headline.slice(0, 24)}..."`);
   };
 
-  const handleResetDemoCards = () => {
-    updateCards(INITIAL_ACTION_CARDS);
-    showToast('🔄 Demo cards restored.');
-  };
-
   const pendingCards = cards.filter((c) => c.status === 'pending');
   const quarantinedCount = pendingCards.filter((c) => !c.isKeystone).length;
   const keystoneCount = pendingCards.filter((c) => c.isKeystone).length;
@@ -365,7 +357,6 @@ export default function LifeOSApp() {
           onToggleEmergency={handleToggleEmergency}
           onOpenLedger={() => setIsLedgerOpen(true)}
           onOpenConnect={() => setIsConnectOpen(true)}
-          onResetDemo={handleResetDemoCards}
           isWhatsAppConnected={Boolean(config.whatsappRecipientPhone)}
           isGoogleConnected={Boolean(config.googleConnected)}
         />
@@ -392,7 +383,6 @@ export default function LifeOSApp() {
               onCritiqueUpdate={handleCritiqueUpdate}
               onSaveToDrafts={handleSaveToDrafts}
               onKillMission={handleKillMission}
-              onResetDemoCards={handleResetDemoCards}
             />
           </div>
         )}

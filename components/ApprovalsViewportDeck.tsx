@@ -27,7 +27,6 @@ interface ApprovalsViewportDeckProps {
   onCritiqueUpdate: (updatedCard: ActionCard) => void;
   onSaveToDrafts: (card: ActionCard) => void;
   onKillMission: (card: ActionCard) => void;
-  onResetDemoCards?: () => void;
 }
 
 export const ApprovalsViewportDeck: React.FC<ApprovalsViewportDeckProps> = ({
@@ -38,7 +37,6 @@ export const ApprovalsViewportDeck: React.FC<ApprovalsViewportDeckProps> = ({
   onCritiqueUpdate,
   onSaveToDrafts,
   onKillMission,
-  onResetDemoCards,
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<ActionCategory | 'all'>('all');
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -182,18 +180,9 @@ export const ApprovalsViewportDeck: React.FC<ApprovalsViewportDeckProps> = ({
               <ShieldCheck className="w-7 h-7" />
             </div>
             <h3 className="text-lg font-black text-white mb-1">Zero Pending Approvals</h3>
-            <p className="text-xs text-slate-400 max-w-xs mb-5">
-              All delegated tasks are clear. Chief of Staff monitoring background streams.
+            <p className="text-xs text-slate-400 max-w-xs">
+              All tasks are clear. Speak a voice directive in the Chatbox, message on WhatsApp, or connect Google Workspace to sync live tasks.
             </p>
-            {onResetDemoCards && (
-              <button
-                onClick={() => { soundManager.playTap(); onResetDemoCards(); }}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition border border-slate-700"
-              >
-                <RotateCcw className="w-3.5 h-3.5 text-indigo-400" />
-                <span>Reload Demo Cards</span>
-              </button>
-            )}
           </div>
         ) : activeCard ? (
           <div

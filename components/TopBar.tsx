@@ -9,7 +9,6 @@ interface TopBarProps {
   onToggleEmergency: () => void;
   onOpenLedger: () => void;
   onOpenConnect: () => void;
-  onResetDemo: () => void;
   isWhatsAppConnected?: boolean;
   isGoogleConnected?: boolean;
 }
@@ -19,7 +18,6 @@ export const TopBar: React.FC<TopBarProps> = ({
   onToggleEmergency,
   onOpenLedger,
   onOpenConnect,
-  onResetDemo,
   isWhatsAppConnected,
   isGoogleConnected,
 }) => {
@@ -113,20 +111,6 @@ export const TopBar: React.FC<TopBarProps> = ({
                 >
                   <MessageSquare className="w-4 h-4 text-emerald-400" />
                   <span>Connect WhatsApp & Google</span>
-                </button>
-
-                <div className="border-t border-slate-800 my-1" />
-
-                <button
-                  onClick={() => {
-                    soundManager.playTap();
-                    setIsDropdownOpen(false);
-                    onResetDemo();
-                  }}
-                  className="w-full px-3.5 py-2 text-left text-slate-400 hover:text-rose-400 hover:bg-slate-800 flex items-center gap-2.5 transition"
-                >
-                  <RotateCcw className="w-4 h-4" />
-                  <span>Reset Demo Data</span>
                 </button>
               </div>
             )}

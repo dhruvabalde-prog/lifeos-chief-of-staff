@@ -448,38 +448,44 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
               <span className="text-[10px] font-mono text-slate-500">{visibleRoutines.length} active</span>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              {visibleRoutines.map((routine) => (
-                <div
-                  key={routine.id}
-                  className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col justify-between gap-3 shadow-md"
-                >
-                  <div>
-                    <div className="flex items-center justify-between gap-2 mb-1.5">
-                      <span className="text-[10px] font-mono font-bold text-slate-400">
-                        {routine.window}
-                      </span>
-                      <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300">
-                        {routine.totalMinutes}m
-                      </span>
+            {visibleRoutines.length === 0 ? (
+              <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 text-center text-xs text-slate-400">
+                No executive routines active.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {visibleRoutines.map((routine) => (
+                  <div
+                    key={routine.id}
+                    className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col justify-between gap-3 shadow-md"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-1.5">
+                        <span className="text-[10px] font-mono font-bold text-slate-400">
+                          {routine.window}
+                        </span>
+                        <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300">
+                          {routine.totalMinutes}m
+                        </span>
+                      </div>
+
+                      <h4 className="text-xs font-black text-white">{routine.name}</h4>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        {routine.steps.length} sequential steps • {routine.mode}
+                      </p>
                     </div>
 
-                    <h4 className="text-xs font-black text-white">{routine.name}</h4>
-                    <p className="text-[11px] text-slate-400 mt-0.5">
-                      {routine.steps.length} sequential steps • {routine.mode}
-                    </p>
+                    <button
+                      onClick={() => { soundManager.playTap(); onOpenRoutine(routine); }}
+                      className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-indigo-300 font-bold text-xs transition border border-slate-700"
+                    >
+                      <Play className="w-3 h-3 fill-indigo-300" />
+                      <span>Launch Routine</span>
+                    </button>
                   </div>
-
-                  <button
-                    onClick={() => { soundManager.playTap(); onOpenRoutine(routine); }}
-                    className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-indigo-300 font-bold text-xs transition border border-slate-700"
-                  >
-                    <Play className="w-3 h-3 fill-indigo-300" />
-                    <span>Launch Routine</span>
-                  </button>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -494,33 +500,39 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
               <span className="text-[10px] font-mono text-emerald-400">Live Sync</span>
             </div>
 
-            <div className="space-y-2">
-              {calendarEvents.map((evt) => (
-                <div
-                  key={evt.id}
-                  className="p-3 rounded-2xl bg-slate-900 border border-slate-800 flex justify-between items-center text-xs"
-                >
-                  <div className="truncate pr-2">
-                    <div className="font-bold text-slate-200 truncate">{evt.title}</div>
-                    <div className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">
-                      <Clock className="w-3 h-3 text-slate-500" />
-                      <span>{evt.timeRange}</span>
+            {calendarEvents.length === 0 ? (
+              <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 text-center text-xs text-slate-400">
+                No calendar events synced. Connect your Google account to fetch schedule.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {calendarEvents.map((evt) => (
+                  <div
+                    key={evt.id}
+                    className="p-3 rounded-2xl bg-slate-900 border border-slate-800 flex justify-between items-center text-xs"
+                  >
+                    <div className="truncate pr-2">
+                      <div className="font-bold text-slate-200 truncate">{evt.title}</div>
+                      <div className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">
+                        <Clock className="w-3 h-3 text-slate-500" />
+                        <span>{evt.timeRange}</span>
+                      </div>
                     </div>
+                    {evt.meetLink && (
+                      <a
+                        href={evt.meetLink}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600 hover:text-white transition text-[10px] font-bold shrink-0"
+                      >
+                        <span>Join</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    )}
                   </div>
-                  {evt.meetLink && (
-                    <a
-                      href={evt.meetLink}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600 hover:text-white transition text-[10px] font-bold shrink-0"
-                    >
-                      <span>Join</span>
-                      <ExternalLink className="w-3 h-3" />
-                    </a>
-                  )}
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -537,30 +549,36 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
               </span>
             </div>
 
-            <div className="space-y-2">
-              {northStars.map((ns) => (
-                <div
-                  key={ns.id}
-                  className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 space-y-2"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-bold text-white truncate">{ns.title}</span>
-                    <span className="text-[10px] font-mono font-bold text-emerald-400">
-                      {ns.currentProgress}%
-                    </span>
+            {northStars.length === 0 ? (
+              <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 text-center text-xs text-slate-400">
+                No active North Stars yet. Delegate daily focus priorities in the Chatbox.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {northStars.map((ns) => (
+                  <div
+                    key={ns.id}
+                    className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 space-y-2"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-bold text-white truncate">{ns.title}</span>
+                      <span className="text-[10px] font-mono font-bold text-emerald-400">
+                        {ns.currentProgress}%
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-400">
+                      Target: <span className="text-slate-300">{ns.targetMetric}</span>
+                    </div>
+                    <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                      <div
+                        className="bg-emerald-400 h-full rounded-full transition-all duration-300"
+                        style={{ width: `${ns.currentProgress}%` }}
+                      />
+                    </div>
                   </div>
-                  <div className="text-[11px] text-slate-400">
-                    Target: <span className="text-slate-300">{ns.targetMetric}</span>
-                  </div>
-                  <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
-                    <div
-                      className="bg-emerald-400 h-full rounded-full transition-all duration-300"
-                      style={{ width: `${ns.currentProgress}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -575,37 +593,43 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
               <span className="text-[10px] font-mono text-slate-500">{missions.length} missions</span>
             </div>
 
-            <div className="space-y-2">
-              {missions.map((m) => (
-                <div
-                  key={m.id}
-                  className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 space-y-2"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-slate-800 text-slate-300">
-                      {m.category}
-                    </span>
-                    <span className="text-[11px] font-mono text-slate-400">{m.deadline}</span>
-                  </div>
-
-                  <h5 className="text-xs font-bold text-white">{m.title}</h5>
-                  <p className="text-[11px] text-slate-400 leading-snug line-clamp-2">{m.description}</p>
-
-                  <div className="space-y-1 pt-1">
-                    <div className="flex justify-between text-[10px] text-slate-400 font-mono">
-                      <span>Velocity</span>
-                      <span className="font-bold text-indigo-400">{m.progressPercent}%</span>
+            {missions.length === 0 ? (
+              <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 text-center text-xs text-slate-400">
+                No quarterly missions active. Voice your key milestones to set up tracking.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {missions.map((m) => (
+                  <div
+                    key={m.id}
+                    className="p-3.5 rounded-2xl bg-slate-900 border border-slate-800 space-y-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-slate-800 text-slate-300">
+                        {m.category}
+                      </span>
+                      <span className="text-[11px] font-mono text-slate-400">{m.deadline}</span>
                     </div>
-                    <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
-                      <div
-                        className="bg-indigo-500 h-full rounded-full transition-all duration-300"
-                        style={{ width: `${m.progressPercent}%` }}
-                      />
+
+                    <h5 className="text-xs font-bold text-white">{m.title}</h5>
+                    <p className="text-[11px] text-slate-400 leading-snug line-clamp-2">{m.description}</p>
+
+                    <div className="space-y-1 pt-1">
+                      <div className="flex justify-between text-[10px] text-slate-400 font-mono">
+                        <span>Velocity</span>
+                        <span className="font-bold text-indigo-400">{m.progressPercent}%</span>
+                      </div>
+                      <div className="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                        <div
+                          className="bg-indigo-500 h-full rounded-full transition-all duration-300"
+                          style={{ width: `${m.progressPercent}%` }}
+                        />
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
