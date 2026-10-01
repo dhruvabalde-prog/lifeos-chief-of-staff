@@ -17,6 +17,27 @@ export const GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/gmail.send',
 ].join(' ');
 
+export function getRedirectUri(request?: { headers: { get: (name: string) => string | null } }): string {
+  const host = request?.headers?.get('x-forwarded-host') || request?.headers?.get('host') || '';
+  const isLocal = host.includes('localhost') || host.includes('127.0.0.1');
+
+  if (isLocal) {
+    return `http://${host || 'localhost:3000'}/api/auth/google/callback`;
+  }
+
+  if (process.env.NEXT_PUBLIC_SITE_URL) {
+    const clean = process.env.NEXT_PUBLIC_SITE_URL.trim().replace(/\/$/, '');
+    return `${clean}/api/auth/google/callback`;
+  }
+
+  if (host) {
+    const proto = request?.headers?.get('x-forwarded-proto') || 'https';
+    return `${proto}://${host}/api/auth/google/callback`;
+  }
+
+  return 'https://lessgo-eta.vercel.app/api/auth/google/callback';
+}
+
 export function getGoogleOAuthURL(redirectUri: string): string {
   const rootUrl = 'https://accounts.google.com/o/oauth2/v2/auth';
   const clientId = GOOGLE_CLIENT_ID || (typeof window !== 'undefined' ? localStorage.getItem('GOOGLE_CLIENT_ID') || '' : '');
