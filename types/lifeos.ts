@@ -32,6 +32,28 @@ export interface ActionCard {
     rawMarkdown?: string;
   };
   critiqueHistory?: Array<{ timestamp: string; critique: string; priorSynthesis: string }>;
+  targetArtifact?: string; // Target Native Artifact: Google Tasks, Google Calendar, Google Sheets, Google Docs, or Google Drive
+  googleService?: 'Google Drive' | 'Google Sheets' | 'Google Calendar' | 'Google Tasks' | 'Google Docs' | 'Google Keep';
+  pillarName?: string;
+  skillId?: string;
+  customButtons?: Array<{ label: string; action: string; primary?: boolean }>;
+}
+
+export interface LifeSkill {
+  id: string;
+  pillarId: string;
+  pillarName: string;
+  name: string;
+  icon: string;
+  purpose: string;
+  triggers: {
+    voiceCues: string[];
+    multimodal?: string[];
+    scheduledCron?: string;
+  };
+  targetArtifact: string;
+  googleService: 'Google Drive' | 'Google Sheets' | 'Google Calendar' | 'Google Tasks' | 'Google Docs' | 'Google Keep';
+  actionCardTemplate: Omit<ActionCard, 'id' | 'createdAt' | 'status'>;
 }
 
 export type RawInputType = 'voice' | 'document' | 'image' | 'scratchpad' | 'whatsapp';

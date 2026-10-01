@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   CheckCircle2,
   Circle,
@@ -12,12 +12,20 @@ import {
   Flag,
   Sparkles,
   Clock,
-  ShieldAlert,
+  Shield,
+  Zap,
+  Timer,
+  Pause,
+  RotateCcw,
+  ChevronDown,
+  ChevronUp,
+  ArrowRight,
 } from 'lucide-react';
 import { Routine, CalendarEvent, NorthStarItem, Mission, ActionCard } from '@/types/lifeos';
 import { soundManager } from '@/lib/audio';
+import { PILLAR_GROUPS, spawnActionCardFromSkill, LIFE_SKILLS_CATALOG } from '@/lib/skillsCatalog';
 
-type OperationFilter = 'all' | 'tasks' | 'routines' | 'calendar' | 'northstars' | 'goals';
+type OperationFilter = 'all' | 'protocols' | 'tasks' | 'routines' | 'calendar' | 'northstars' | 'goals';
 
 interface OperationsViewProps {
   routines: Routine[];
@@ -28,6 +36,8 @@ interface OperationsViewProps {
   emergencyMode: boolean;
   onOpenRoutine: (routine: Routine) => void;
   onApproveCard: (card: ActionCard) => void;
+  onSpawnCard?: (card: ActionCard) => void;
+  onNavigateToApprovals?: () => void;
 }
 
 export const OperationsView: React.FC<OperationsViewProps> = ({
@@ -39,9 +49,53 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
   emergencyMode,
   onOpenRoutine,
   onApproveCard,
+  onSpawnCard,
+  onNavigateToApprovals,
 }) => {
   const [activeFilter, setActiveFilter] = useState<OperationFilter>('all');
   const [completedTaskIds, setCompletedTaskIds] = useState<Record<string, boolean>>({});
+  const [expandedPillars, setExpandedPillars] = useState<Record<string, boolean>>({
+    'pillar-1-health': true,
+    'pillar-3-wealth': true,
+    'pillar-6-cadence': true,
+  });
+
+  // Micro-Timer Friction Breaker State (Skill 17)
+  const [timerSecondsLeft, setTimerSecondsLeft] = useState(600); // 10 minutes
+  const [isTimerRunning, setIsTimerRunning] = useState(false);
+  const timerIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    if (isTimerRunning) {
+      timerIntervalRef.current = setInterval(() => {
+        setTimerSecondsLeft((prev) => {
+          if (prev <= 1) {
+            clearInterval(timerIntervalRef.current as NodeJS.Timeout);
+            setIsTimerRunning(false);
+            soundManager.playApproveChime();
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } else {
+      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+    }
+    return () => {
+      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+    };
+  }, [isTimerRunning]);
+
+  const toggleTimer = () => {
+    soundManager.playTap();
+    setIsTimerRunning(!isTimerRunning);
+  };
+
+  const resetTimer = () => {
+    soundManager.playTap();
+    setIsTimerRunning(false);
+    setTimerSecondsLeft(600);
+  };
 
   const toggleTask = (taskId: string) => {
     soundManager.playTap();
@@ -49,6 +103,23 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
       ...prev,
       [taskId]: !prev[taskId],
     }));
+  };
+
+  const togglePillar = (pillarId: string) => {
+    soundManager.playTap();
+    setExpandedPillars((prev) => ({
+      ...prev,
+      [pillarId]: !prev[pillarId],
+    }));
+  };
+
+  const handleRunProtocol = (skillId: string) => {
+    soundManager.playTap();
+    const newCard = spawnActionCardFromSkill(skillId);
+    if (newCard && onSpawnCard) {
+      soundManager.playApproveChime();
+      onSpawnCard(newCard);
+    }
   };
 
   // Filter pending or keystone cards
@@ -60,18 +131,20 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
 
   const visibleRoutines = routines.filter((r) => {
     if (emergencyMode) {
-      // In emergency mode, only show routines with keystone steps
       return r.steps.some((s) => s.isKeystone);
     }
     return true;
   });
 
-  // Pill counts
   const taskCount = pendingTasks.length;
   const routineCount = visibleRoutines.length;
   const calendarCount = calendarEvents.length;
   const northStarCount = northStars.length;
   const missionCount = missions.length;
+  const protocolCount = LIFE_SKILLS_CATALOG.length;
+
+  const timerMinutes = Math.floor(timerSecondsLeft / 60);
+  const timerSeconds = timerSecondsLeft % 60;
 
   return (
     <div className="w-full h-full flex flex-col overflow-hidden max-w-2xl mx-auto select-none">
@@ -85,6 +158,16 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
             }`}
           >
             All
+          </button>
+
+          <button
+            onClick={() => { soundManager.playTap(); setActiveFilter('protocols'); }}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap flex items-center gap-1.5 ${
+              activeFilter === 'protocols' ? 'bg-indigo-600 text-white shadow-md' : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
+            }`}
+          >
+            <Shield className="w-3.5 h-3.5" />
+            <span>Protocols ({protocolCount})</span>
           </button>
 
           <button
@@ -140,7 +223,140 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
       </div>
 
       {/* 2. MAIN SCROLLABLE CONTENT AREA */}
-      <div className="flex-1 min-h-0 overflow-y-auto space-y-4 pr-1 no-scrollbar pb-6">
+      <div className="flex-1 min-h-0 overflow-y-auto space-y-4 pr-1 no-scrollbar pb-8">
+        {/* INTERACTIVE 10-MINUTE FRICTION BREAKER WIDGET (Skill 17) */}
+        {(activeFilter === 'all' || activeFilter === 'protocols' || activeFilter === 'tasks') && (
+          <div className="p-4 rounded-3xl bg-gradient-to-r from-slate-900 via-indigo-950/40 to-slate-900 border border-indigo-500/30 flex items-center justify-between gap-3 shadow-lg">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 flex items-center justify-center shrink-0 font-bold">
+                <Timer className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-black text-white">10m Friction Breaker</span>
+                  <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-indigo-500/20 text-indigo-300">
+                    Skill #17
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Micro-commitment sprint. Free to stop when the bell rings.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-base font-black font-mono text-emerald-400 min-w-[50px] text-right">
+                {timerMinutes}:{timerSeconds.toString().padStart(2, '0')}
+              </span>
+              <button
+                onClick={toggleTimer}
+                className="p-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition shadow-sm"
+                title={isTimerRunning ? 'Pause Sprint' : 'Start 10m Sprint'}
+              >
+                {isTimerRunning ? <Pause className="w-3.5 h-3.5 fill-white" /> : <Play className="w-3.5 h-3.5 fill-white" />}
+              </button>
+              <button
+                onClick={resetTimer}
+                className="p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white transition"
+                title="Reset Sprint Timer"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* SECTION: 21 BUILT-IN LIFE SKILLS & PROTOCOLS */}
+        {(activeFilter === 'all' || activeFilter === 'protocols') && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between px-1">
+              <span className="text-xs font-black text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                <Shield className="w-3.5 h-3.5 text-indigo-400" />
+                <span>7 Executive Pillars & 21 Life Protocols</span>
+              </span>
+              <span className="text-[10px] font-mono text-emerald-400">Google Workspace Ready</span>
+            </div>
+
+            <div className="space-y-2.5">
+              {PILLAR_GROUPS.map((pillar) => {
+                const isExpanded = expandedPillars[pillar.id];
+                return (
+                  <div
+                    key={pillar.id}
+                    className="rounded-3xl bg-slate-900 border border-slate-800 overflow-hidden shadow-md transition"
+                  >
+                    {/* Pillar Header */}
+                    <button
+                      onClick={() => togglePillar(pillar.id)}
+                      className="w-full p-3.5 flex items-center justify-between text-left hover:bg-slate-800/40 transition"
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <span className="text-lg">{pillar.icon}</span>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-black uppercase text-indigo-400">
+                              Pillar {pillar.number}
+                            </span>
+                            <span className="text-xs font-black text-white truncate">{pillar.name}</span>
+                          </div>
+                          <p className="text-[11px] text-slate-400 truncate">{pillar.tagline}</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0 ml-2">
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-300">
+                          {pillar.skills.length} Skills
+                        </span>
+                        {isExpanded ? (
+                          <ChevronUp className="w-4 h-4 text-slate-400" />
+                        ) : (
+                          <ChevronDown className="w-4 h-4 text-slate-400" />
+                        )}
+                      </div>
+                    </button>
+
+                    {/* Pillar Skills List */}
+                    {isExpanded && (
+                      <div className="px-3.5 pb-3.5 space-y-2 border-t border-slate-800/60 pt-2.5">
+                        {pillar.skills.map((skill) => (
+                          <div
+                            key={skill.id}
+                            className="p-3 rounded-2xl bg-slate-950/80 border border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 hover:border-slate-700 transition"
+                          >
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                <span className="text-sm">{skill.icon}</span>
+                                <h5 className="text-xs font-black text-white">{skill.name}</h5>
+                                <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                  ➔ {skill.googleService}
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-slate-300 leading-snug">
+                                {skill.purpose}
+                              </p>
+                              <div className="text-[10px] text-slate-500 font-mono mt-1 truncate">
+                                Target: {skill.targetArtifact}
+                              </div>
+                            </div>
+
+                            <button
+                              onClick={() => handleRunProtocol(skill.id)}
+                              className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[11px] shrink-0 transition shadow-sm"
+                            >
+                              <Zap className="w-3 h-3 fill-white" />
+                              <span>Queue Card</span>
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* SECTION: TASKS */}
         {(activeFilter === 'all' || activeFilter === 'tasks') && (
           <div className="space-y-2.5">
@@ -188,9 +404,9 @@ export const OperationsView: React.FC<OperationsViewProps> = ({
                               <Sparkles className="w-2.5 h-2.5" /> Keystone
                             </span>
                           )}
-                          {task.urgency === 'critical' && (
-                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300">
-                              Critical
+                          {task.googleService && (
+                            <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                              ➔ {task.googleService}
                             </span>
                           )}
                         </div>

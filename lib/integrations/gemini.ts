@@ -88,79 +88,238 @@ Return valid JSON only matching schema:
       }
     }
 
-    // Heuristic high-accuracy Executive Parser fallback:
+    // Heuristic high-accuracy Executive Parser fallback matching 21 Life Skills:
     const lower = rawText.toLowerCase();
-    let category: ActionCategory = 'responses';
-    let categoryLabel = '📧 GMAIL RESPONSE';
-    let urgency: UrgencyLevel = 'high';
-    let isKeystone = false;
-    let previewType: ActionCard['previewType'] = 'email';
-    let previewData: ActionCard['previewData'] = {};
 
-    if (lower.includes('bill') || lower.includes('pay') || lower.includes('invoice') || lower.includes('tax') || lower.includes('$')) {
-      category = 'lifeops';
-      categoryLabel = '⚡ LIFE OPS LEDGER';
-      urgency = 'critical';
-      isKeystone = true;
-      previewType = 'invoice';
-      previewData = {
-        vendor: 'Authorized Vendor / Service Dept',
-        amount: lower.match(/\$\d+(\.\d{2})?/)?.[0] || '$450.00',
-        dueDate: 'Today, End of Day',
-        lineItems: [{ desc: 'Delegated expense disbursement authorization', amount: '$450.00' }],
-      };
-    } else if (lower.includes('insurance') || lower.includes('medical') || lower.includes('appeal') || lower.includes('clinic')) {
-      category = 'protocols';
-      categoryLabel = '🛡️ PROTOCOL DISPATCH';
-      urgency = 'critical';
-      isKeystone = true;
-      previewType = 'document';
-      previewData = {
-        docTitle: 'Clinical Protocol & Expedited Resolution',
-        sections: [
-          { title: 'Summary of Grievance', content: rawText },
-          { title: 'Delegated Remedy', content: 'Execute regulatory escalation and transmit formal notice.' },
-        ],
-      };
-    } else if (lower.includes('contract') || lower.includes('sla') || lower.includes('agreement') || lower.includes('doc')) {
-      category = 'artifacts';
-      categoryLabel = '📄 ARTIFACT GENERATION';
-      urgency = 'medium';
-      previewType = 'document';
-      previewData = {
-        docTitle: 'Executive Working Artifact',
-        sections: [
-          { title: 'Core Objectives', content: rawText },
-          { title: 'Next Milestones', content: '1. Review redlines 2. Route for digital sign-off.' },
-        ],
-      };
-    } else {
-      category = 'responses';
-      categoryLabel = '📧 GMAIL OUTREACH';
-      urgency = 'high';
-      previewType = 'email';
-      previewData = {
-        to: 'counterparty@enterprise.io',
-        subject: 'Delegation Notice & Priority Alignment',
-        body: `Hello,\n\nFollowing up regarding our discussion: ${rawText}.\n\nLet us proceed with this structure and sync accordingly.\n\nBest regards,\nExecutive Office`,
-      };
+    // Import skills from catalog matching
+    const { LIFE_SKILLS_CATALOG, spawnActionCardFromSkill } = await import('@/lib/skillsCatalog');
+
+    // 1. Family Emergency & SOS Sentinel
+    if (lower.includes('emergency') || lower.includes('hospital') || lower.includes('apollo') || lower.includes('tpa') || lower.includes('blood group')) {
+      const card = spawnActionCardFromSkill('skill-1-emergency-sos');
+      if (card) {
+        card.id = id;
+        card.sourceContext = `Synthesized from ${inputType} directive (${now})`;
+        return { rawTranscription: rawText, card };
+      }
     }
 
+    // 2. Family Clinical & Health Vault
+    if (lower.includes('prescribed') || lower.includes('doctor') || lower.includes('lipid') || lower.includes('hba1c') || lower.includes('metformin') || lower.includes('blood test') || lower.includes('lab report')) {
+      const card = spawnActionCardFromSkill('skill-2-clinical-vault');
+      if (card) {
+        card.id = id;
+        card.sourceContext = `Synthesized from ${inputType} directive (${now})`;
+        card.headline = rawText.length > 70 ? `Log Clinical Prescription: ${rawText.slice(0, 65)}...` : `Log Clinical Prescription: ${rawText}`;
+        return { rawTranscription: rawText, card };
+      }
+    }
+
+    // 3. Preventive Health Screening Cadence
+    if (lower.includes('dental') || lower.includes('eye screening') || lower.includes('checkup due') || lower.includes('prophylaxis')) {
+      const card = spawnActionCardFromSkill('skill-3-preventive-screening');
+      if (card) {
+        card.id = id;
+        return { rawTranscription: rawText, card };
+      }
+    }
+
+    // 4. Family Nutrition & Pantry Optimizer
+    if (lower.includes('lunch') || lower.includes('dinner') || lower.includes('meal') || lower.includes('grocery') || lower.includes('almond') || lower.includes('oats') || lower.includes('calories') || lower.includes('protein')) {
+      const card = spawnActionCardFromSkill('skill-4-nutrition-pantry');
+      if (card) {
+        card.id = id;
+        card.sourceContext = `Synthesized from ${inputType} directive (${now})`;
+        card.headline = `Log Nutrition Entry: "${rawText.slice(0, 50)}"`;
+        return { rawTranscription: rawText, card };
+      }
+    }
+
+    // 5. Physical Fitness & Workout Programmer
+    if (lower.includes('workout') || lower.includes('cycling') || lower.includes('shoulder press') || lower.includes('bench press') || lower.includes('sets') || lower.includes('gym')) {
+      const card = spawnActionCardFromSkill('skill-5-fitness-workout');
+      if (card) {
+        card.id = id;
+        card.sourceContext = `Synthesized from ${inputType} directive (${now})`;
+        card.headline = `Record Workout Volume: "${rawText.slice(0, 50)}"`;
+        return { rawTranscription: rawText, card };
+      }
+    }
+
+    // 6. Sleep Architecture Optimizer
+    if (lower.includes('sleep') || lower.includes('slept') || lower.includes('bedtime') || lower.includes('wind down') || lower.includes('sunset')) {
+      const card = spawnActionCardFromSkill('skill-6-sleep-architecture');
+      if (card) {
+        card.id = id;
+        return { rawTranscription: rawText, card };
+      }
+    }
+
+    // 7. Family Wealth, Budget & Tax Desk
+    if (lower.includes('80c') || lower.includes('80d') || lower.includes('tax') || lower.includes('term life') || lower.includes('premium') || lower.includes('cashflow') || lower.includes('receipt')) {
+      const card = spawnActionCardFromSkill('skill-7-wealth-tax');
+      if (card) {
+        card.id = id;
+        card.sourceContext = `Synthesized from ${inputType} directive (${now})`;
+        card.headline = `Log Tax Deduction & Receipt: "${rawText.slice(0, 50)}"`;
+        return { rawTranscription: rawText, card };
+      }
+    }
+
+    // 8. Dormant Benefits & Perks Optimizer
+    if (lower.includes('lounge') || lower.includes('card perk') || lower.includes('bogo') || lower.includes('fee waiver')) {
+      const card = spawnActionCardFromSkill('skill-8-dormant-perks');
+      if (card) {
+        card.id = id;
+        return { rawTranscription: rawText, card };
+      }
+    }
+
+    // 9. Smart Shopping & Price Optimizer
+    if (lower.includes('deal') || lower.includes('discount') || lower.includes('compare price') || lower.includes('whey protein') || lower.includes('best price')) {
+      const card = spawnActionCardFromSkill('skill-9-smart-shopping');
+      if (card) {
+        card.id = id;
+        card.sourceContext = `Synthesized from ${inputType} directive (${now})`;
+        card.headline = `Price Comparison Arbitrage: "${rawText.slice(0, 50)}"`;
+        return { rawTranscription: rawText, card };
+      }
+    }
+
+    // 10. Long-Term Investment Allocator
+    if (lower.includes('sip') || lower.includes('portfolio') || lower.includes('rebalance') || lower.includes('asset allocation') || lower.includes('index fund')) {
+      const card = spawnActionCardFromSkill('skill-10-investment-allocator');
+      if (card) {
+        card.id = id;
+        return { rawTranscription: rawText, card };
+      }
+    }
+
+    // 11. Domestic Staff & Home Ops Manager
+    if (lower.includes('maid') || lower.includes('cook') || lower.includes('driver') || lower.includes('ramesh') || lower.includes('kamla') || lower.includes('advance') || lower.includes('staff salary')) {
+      const card = spawnActionCardFromSkill('skill-11-domestic-staff');
+      if (card) {
+        card.id = id;
+        card.sourceContext = `Synthesized from ${inputType} directive (${now})`;
+        card.headline = `Staff Ops Update: "${rawText.slice(0, 50)}"`;
+        return { rawTranscription: rawText, card };
+      }
+    }
+
+    // 12. Vehicle Care & Mobility Desk
+    if (lower.includes('car') || lower.includes('puc') || lower.includes('fastag') || lower.includes('serviced') || lower.includes('vehicle')) {
+      const card = spawnActionCardFromSkill('skill-12-vehicle-mobility');
+      if (card) {
+        card.id = id;
+        return { rawTranscription: rawText, card };
+      }
+    }
+
+    // 13. Contractor & Home Renovation Estimator
+    if (lower.includes('renovation') || lower.includes('carpenter') || lower.includes('plumber') || lower.includes('contractor') || lower.includes('wiring quote')) {
+      const card = spawnActionCardFromSkill('skill-13-renovation-estimator');
+      if (card) {
+        card.id = id;
+        return { rawTranscription: rawText, card };
+      }
+    }
+
+    // 14. Sovereign KYC & ID Vault
+    if (lower.includes('passport') || lower.includes('aadhaar') || lower.includes('pan card') || lower.includes('kyc') || lower.includes('voter id')) {
+      const card = spawnActionCardFromSkill('skill-14-kyc-id-vault');
+      if (card) {
+        card.id = id;
+        card.sourceContext = `Synthesized from ${inputType} directive (${now})`;
+        return { rawTranscription: rawText, card };
+      }
+    }
+
+    // 15. Family Legal Estate & Will Planner
+    if (lower.includes('nominee') || lower.includes('will') || lower.includes('estate') || lower.includes('succession') || lower.includes('demat nominee')) {
+      const card = spawnActionCardFromSkill('skill-15-legal-estate');
+      if (card) {
+        card.id = id;
+        return { rawTranscription: rawText, card };
+      }
+    }
+
+    // 16. Single Daily North Star Filter
+    if (lower.includes('north star') || lower.includes('top priority') || lower.includes('filter backlog')) {
+      const card = spawnActionCardFromSkill('skill-16-daily-north-star');
+      if (card) {
+        card.id = id;
+        return { rawTranscription: rawText, card };
+      }
+    }
+
+    // 17. Micro-Timer Friction Breaker
+    if (lower.includes('dreading') || lower.includes('friction breaker') || lower.includes('10-minute sprint') || lower.includes('procrastinating')) {
+      const card = spawnActionCardFromSkill('skill-17-friction-breaker');
+      if (card) {
+        card.id = id;
+        return { rawTranscription: rawText, card };
+      }
+    }
+
+    // 18. Nightly Wind-Down & Extraction Session
+    if (lower.includes('nightly wind') || lower.includes('daily win') || lower.includes('clear loops')) {
+      const card = spawnActionCardFromSkill('skill-18-nightly-winddown');
+      if (card) {
+        card.id = id;
+        return { rawTranscription: rawText, card };
+      }
+    }
+
+    // 19. Digital Declutter & Cyber Hygiene Guard
+    if (lower.includes('2fa') || lower.includes('cyber hygiene') || lower.includes('password rotation') || lower.includes('clean storage')) {
+      const card = spawnActionCardFromSkill('skill-19-cyber-hygiene');
+      if (card) {
+        card.id = id;
+        return { rawTranscription: rawText, card };
+      }
+    }
+
+    // 20. Family Relationships & Social Calendar
+    if (lower.includes('birthday') || lower.includes('anniversary') || lower.includes('mother') || lower.includes('social calendar')) {
+      const card = spawnActionCardFromSkill('skill-20-social-calendar');
+      if (card) {
+        card.id = id;
+        card.sourceContext = `Synthesized from ${inputType} directive (${now})`;
+        return { rawTranscription: rawText, card };
+      }
+    }
+
+    // 21. Gifts & Festive Sales Arbitrageur
+    if (lower.includes('diwali') || lower.includes('festive') || lower.includes('gift hamper') || lower.includes('mega sale')) {
+      const card = spawnActionCardFromSkill('skill-21-festive-sales');
+      if (card) {
+        card.id = id;
+        return { rawTranscription: rawText, card };
+      }
+    }
+
+    // Default: Executive Business Directive
     return {
       rawTranscription: rawText,
       card: {
         id,
-        category,
-        categoryLabel,
+        category: 'responses',
+        categoryLabel: '📧 GMAIL OUTREACH',
         sourceContext: `Synthesized from ${inputType} directive (${now})`,
-        headline: rawText.length > 80 ? `${rawText.substring(0, 77)}...` : rawText,
-        synthesis: `Chief of Staff synthesized your directive into an actionable delegation. Executive review required prior to dispatch.`,
-        urgency,
-        isKeystone,
+        headline: rawText.length > 75 ? `${rawText.substring(0, 72)}...` : rawText,
+        synthesis: `Chief of Staff has formulated an executive response protocol targeting Google Workspace dispatch.`,
+        urgency: 'high',
+        isKeystone: false,
         status: 'pending',
         createdAt: new Date().toISOString(),
-        previewType,
-        previewData,
+        targetArtifact: 'Google Workspace (Gmail / Docs)',
+        googleService: 'Google Docs',
+        previewType: 'email',
+        previewData: {
+          to: 'counterparty@enterprise.io',
+          subject: 'Executive Notice & Priority Alignment',
+          body: `Hello,\n\nFollowing up regarding our discussion: "${rawText}".\n\nLet us proceed with this structure and sync accordingly.\n\nBest regards,\nExecutive Office`,
+        },
       },
     };
   }

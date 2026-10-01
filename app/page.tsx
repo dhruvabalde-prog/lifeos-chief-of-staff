@@ -287,6 +287,8 @@ export default function LifeOSApp() {
               emergencyMode={emergencyMode}
               onOpenRoutine={(routine) => setSelectedRoutine(routine)}
               onApproveCard={handleApproveCard}
+              onSpawnCard={handleSpawnCard}
+              onNavigateToApprovals={() => setCurrentView('approvals')}
             />
           </div>
         )}

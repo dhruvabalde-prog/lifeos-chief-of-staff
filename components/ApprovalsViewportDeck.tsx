@@ -204,7 +204,7 @@ export const ApprovalsViewportDeck: React.FC<ApprovalsViewportDeckProps> = ({
             {/* Upper Content Section */}
             <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
               {/* Badges Header */}
-              <div className="flex items-center justify-between gap-2 mb-2.5 shrink-0">
+              <div className="flex items-center justify-between gap-2 mb-2 shrink-0">
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <span className="text-[10px] font-black uppercase px-2.5 py-0.5 rounded-lg bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
                     {activeCard.categoryLabel}
@@ -221,12 +221,19 @@ export const ApprovalsViewportDeck: React.FC<ApprovalsViewportDeckProps> = ({
                   )}
                 </div>
 
-                {activeCard.targetEntity && (
-                  <span className="text-[11px] font-semibold text-slate-400 truncate max-w-[150px]">
-                    To: {activeCard.targetEntity}
+                {activeCard.googleService && (
+                  <span className="text-[10px] font-mono font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-lg border border-emerald-500/20 truncate max-w-[170px]" title={activeCard.targetArtifact}>
+                    ➔ {activeCard.googleService}
                   </span>
                 )}
               </div>
+
+              {/* Target Artifact Path if available */}
+              {activeCard.targetArtifact && (
+                <div className="text-[10px] font-mono text-slate-400 truncate mb-1.5 px-0.5">
+                  Target: <span className="text-slate-300">{activeCard.targetArtifact}</span>
+                </div>
+              )}
 
               {/* Headline */}
               <h2 className="text-base sm:text-lg font-black text-white leading-tight mb-2 shrink-0">
